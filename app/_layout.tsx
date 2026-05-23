@@ -23,18 +23,22 @@ const queryClient = new QueryClient();
 function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-      <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="register" options={{ headerShown: false }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="noticia/[id]" options={{ headerShown: false }} />
-      <Stack.Screen name="expediente/[id]" options={{ headerShown: false }} />
-      <Stack.Screen name="documentos" options={{ headerShown: false }} />
-      <Stack.Screen name="admin" options={{ headerShown: false }} />
-      <Stack.Screen name="estadisticas" options={{ headerShown: false }} />
-      <Stack.Screen name="notificaciones" options={{ headerShown: false }} />
-      <Stack.Screen name="patrocinadores" options={{ headerShown: false }} />
+      <Stack.Screen name="index" />
+      <Stack.Screen name="onboarding" />
+      <Stack.Screen name="login" />
+      <Stack.Screen name="register" />
+      <Stack.Screen name="(tabs)" />
+      
+      {/* Nueva ruta pública para la galería */}
+      <Stack.Screen name="galeria" />
+      
+      <Stack.Screen name="noticia/[id]" />
+      <Stack.Screen name="expediente/[id]" />
+      <Stack.Screen name="documentos" />
+      <Stack.Screen name="admin" />
+      <Stack.Screen name="estadisticas" />
+      <Stack.Screen name="notificaciones" />
+      <Stack.Screen name="patrocinadores" />
     </Stack>
   );
 }
@@ -60,7 +64,8 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <GestureHandlerRootView>
+            {/* AGREGADO: style={{ flex: 1 }} es obligatorio aquí */}
+            <GestureHandlerRootView style={{ flex: 1 }}>
               <KeyboardProvider>
                 <RootLayoutNav />
               </KeyboardProvider>

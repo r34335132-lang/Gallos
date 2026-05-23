@@ -1,121 +1,125 @@
-import React, { useState, useEffect } from "react";
+import { Feather } from "@expo/vector-icons";
+import { router } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Platform,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
-  View,
-  ScrollView,
-  Pressable,
   TextInput,
-  Image,
-  ActivityIndicator,
-  FlatList,
-  Alert,
+  View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
+
+import { StatsCard } from "@/components/StatsCard";
 import { useColors } from "@/hooks/useColors";
 import { supabase } from "@/lib/supabase";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 
-type AdminTab = "beneficiaries" | "news" | "photos";
+const ADMIN_SECTIONS = [
+  { icon: "folder" as const, label: "Expedientes", desc: "Gestionar expedientes y beneficiarios", route: "/(tabs)/expedientes", color: "#1A4FA8" },
+  { icon: "file-text" as const, label: "Noticias Publicadas", desc: "Ver todas las noticias", route: "/(tabs)/noticias", color: "#059669" },
+  { icon: "image" as const, label: "Galería Pública", desc: "Ver fotos publicadas", route: "/galeria", color: "#EC4899" },
+  { icon: "award" as const, label: "Patrocinadores", desc: "Administrar patrocinadores", route: "/patrocinadores", color: "#D97706" },
+  { icon: "bar-chart-2" as const, label: "Estadísticas", desc: "Ver reportes y métricas", route: "/estadisticas", color: "#7C3AED" },
+];
 
-export default function AdminDashboard() {
+type AdminTab = "dashboard" | "news" | "photos";
+
+export default function AdminScreen() {
   const colors = useColors();
-  const [activeTab, setActiveTab] = useState<AdminTab>("beneficiaries");
+  const insets = useSafeAreaInsets();
+  
+  const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [uploading, setUploading] = useState(false);
 
-  // Estados de carga generales
-  const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
-  const [tournaments, setTournaments] = useState<any[]>([]);
+  // Estados de Estadísticas
+  const [stats, setStats] = useState({
+    total_beneficiaries: 0, pending_requests: 0, 
+    pending_documents: 0, active_sponsors: 0,
+    approved_requests: 0, rejected_requests: 0
+  });
 
-  // Formulario de Noticias
+  // Estados Formulario Noticias
   const [newsTitle, setNewsTitle] = useState("");
   const [newsCategory, setNewsCategory] = useState("Fundación");
   const [newsSummary, setNewsSummary] = useState("");
   const [newsContent, setNewsContent] = useState("");
   const [newsImage, setNewsImage] = useState<string | null>(null);
 
-  // Formulario de Fotos
+  // Estados Formulario Fotos (Múltiples)
   const [photoTitle, setPhotoTitle] = useState("");
   const [photoDesc, setPhotoDesc] = useState("");
-  const [selectedTournament, setSelectedTournament] = useState<string | null>(null);
-  const [galleryImage, setGalleryImage] = useState<string | null>(null);
+  const [galleryImages, setGalleryImages] = useState<string[]>([]); // <- Ahora es un arreglo
 
   useEffect(() => {
-    loadBeneficiaries();
-    loadTournaments();
+    loadStats();
   }, []);
 
-  const loadBeneficiaries = async () => {
-    const { data } = await supabase
-      .from("beneficiaries")
-      .select("*")
-      .order("registration_date", { ascending: false });
-    if (data) setBeneficiaries(data);
+  const loadStats = async () => {
+    const { data, error } = await supabase.from("app_stats").select("*").maybeSingle();
+    if (data && !error) setStats(data);
   };
 
-  const loadTournaments = async () => {
-    const { data } = await supabase.from("tournaments").select("*").eq("is_active", true);
-    if (data) setTournaments(data);
-  };
-
-  // Función genérica para subir imágenes al Storage bucket 'img'
+  // Función corregida: Evitamos .arrayBuffer() que congela React Native
   const uploadImageToStorage = async (fileUri: string): Promise<string | null> => {
     try {
-      const response = await fetch(fileUri);
-      const blob = await response.blob();
-      const arrayBuffer = await new Response(blob).arrayBuffer();
-
       const fileExt = fileUri.split(".").pop() || "jpg";
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
       const filePath = `uploads/${fileName}`;
 
+      const response = await fetch(fileUri);
+      const blob = await response.blob(); // Se pasa directo como Blob
+
       const { error: uploadError } = await supabase.storage
         .from("img")
-        .upload(filePath, arrayBuffer, { contentType: `image/${fileExt}` });
+        .upload(filePath, blob, { contentType: `image/${fileExt}` });
 
       if (uploadError) throw uploadError;
 
       const { data } = supabase.storage.from("img").getPublicUrl(filePath);
       return data.publicUrl;
     } catch (error) {
-      console.error("Error en la subida física del archivo:", error);
+      console.error("Error al subir imagen:", error);
       return null;
     }
   };
 
   const pickImage = async (type: "news" | "gallery") => {
+    const isGallery = type === "gallery";
+    
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
+      mediaTypes: ['images'],
+      allowsEditing: !isGallery, // Expo no permite editar si se eligen múltiples
+      allowsMultipleSelection: isGallery, // Activar selección múltiple para la galería
       quality: 0.8,
     });
 
-    if (!result.canceled && result.assets[0].uri) {
-      if (type === "news") setNewsImage(result.assets[0].uri);
-      else setGalleryImage(result.assets[0].uri);
+    if (!result.canceled && result.assets.length > 0) {
+      if (type === "news") {
+        setNewsImage(result.assets[0].uri);
+      } else {
+        const newUris = result.assets.map(a => a.uri);
+        setGalleryImages(prev => [...prev, ...newUris]);
+      }
     }
   };
 
-  const handleUpdateStatus = async (id: string, newStatus: string) => {
-    const { error } = await supabase
-      .from("beneficiaries")
-      .update({ status: newStatus })
-      .eq("id", id);
-
-    if (!error) {
-      Alert.alert("Éxito", "Estado de expediente actualizado correctamente.");
-      loadBeneficiaries();
-    }
+  const removeGalleryImage = (indexToRemove: number) => {
+    setGalleryImages(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
   const handlePublishNews = async () => {
-    if (!newsTitle || !newsContent) return Alert.alert("Campos vacíos", "Completa los campos.");
+    if (!newsTitle || !newsContent) return Alert.alert("Campos vacíos", "Completa título y contenido.");
     setUploading(true);
     let publicUrl = null;
 
-    if (newsImage) {
-      publicUrl = await uploadImageToStorage(newsImage);
-    }
+    if (newsImage) publicUrl = await uploadImageToStorage(newsImage);
 
     const { error } = await supabase.from("news").insert({
       title: newsTitle,
@@ -129,157 +133,253 @@ export default function AdminDashboard() {
     setUploading(false);
     if (!error) {
       Alert.alert("Éxito", "Noticia publicada exitosamente.");
-      setNewsTitle("");
-      setNewsSummary("");
-      setNewsContent("");
-      setNewsImage(null);
+      setNewsTitle(""); setNewsSummary(""); setNewsContent(""); setNewsImage(null);
+      setActiveTab("dashboard");
+    } else {
+      Alert.alert("Error", "No se pudo publicar la noticia.");
     }
   };
 
   const handleUploadPhoto = async () => {
-    if (!galleryImage) return Alert.alert("Falta Imagen", "Selecciona una fotografía.");
+    if (galleryImages.length === 0) return Alert.alert("Faltan Imágenes", "Selecciona al menos una fotografía.");
     setUploading(true);
 
-    const publicUrl = await uploadImageToStorage(galleryImage);
+    let successCount = 0;
 
-    if (publicUrl) {
-      const { error } = await supabase.from("gallery_photos").insert({
-        title: photoTitle,
-        description: photoDesc,
-        image_url: publicUrl,
-        tournament_id: selectedTournament || null,
-      });
+    // Subimos todas las fotos del arreglo una por una
+    for (const uri of galleryImages) {
+      const publicUrl = await uploadImageToStorage(uri);
 
-      if (!error) {
-        Alert.alert("Éxito", "Foto subida a la galería global.");
-        setPhotoTitle("");
-        setPhotoDesc("");
-        setGalleryImage(null);
+      if (publicUrl) {
+        const { error } = await supabase.from("gallery_photos").insert({
+          title: photoTitle, // Aplicamos el mismo título y desc a las fotos del mismo lote
+          description: photoDesc,
+          image_url: publicUrl,
+        });
+
+        if (!error) successCount++;
       }
     }
+
     setUploading(false);
+    if (successCount > 0) {
+      Alert.alert("Éxito", `Se subieron ${successCount} fotos a la galería.`);
+      setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]);
+      setActiveTab("dashboard");
+    } else {
+      Alert.alert("Error", "No se pudieron subir las imágenes.");
+    }
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Selector de pestañas */}
-      <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
-        {(["beneficiaries", "news", "photos"] as AdminTab[]).map((tab) => (
-          <Pressable
-            key={tab}
-            onPress={() => setActiveTab(tab)}
-            style={[styles.tabItem, activeTab === tab && { borderBottomColor: colors.primary }]}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                { color: activeTab === tab ? colors.primary : colors.mutedForeground },
-              ]}
-            >
-              {tab === "beneficiaries" ? "Beneficiarios" : tab === "news" ? "Noticias" : "Subir Fotos"}
-            </Text>
-          </Pressable>
-        ))}
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* HEADER */}
+      <View style={[styles.header, { backgroundColor: colors.primary, paddingTop: insets.top + (Platform.OS === "web" ? 67 : 16) }]}>
+        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+          <Feather name="arrow-left" size={22} color="#FFFFFF" />
+        </Pressable>
+        <Text style={styles.headerTitle}>Panel administrador</Text>
+        <View style={{ width: 22 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        {/* PESTAÑA: BENEFICIARIOS */}
-        {activeTab === "beneficiaries" && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Revisión de Expedientes</Text>
-            {beneficiaries.map((b) => (
-              <View key={b.id} style={[styles.itemCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <View>
-                  <Text style={[styles.itemName, { color: colors.foreground }]}>{b.name}</Text>
-                  <Text style={{ color: colors.mutedForeground }}>Folio: {b.folio} | Estado actuel: {b.status}</Text>
-                </View>
-                <View style={styles.actionRow}>
-                  <Pressable style={[styles.btnAction, { backgroundColor: "#10B981" }]} onPress={() => handleUpdateStatus(b.id, "activo")}>
-                    <Text style={styles.btnText}>Aprobar</Text>
-                  </Pressable>
-                  <Pressable style={[styles.btnAction, { backgroundColor: "#F59E0B" }]} onPress={() => handleUpdateStatus(b.id, "en_revision")}>
-                    <Text style={styles.btnText}>Revisar</Text>
-                  </Pressable>
-                  <Pressable style={[styles.btnAction, { backgroundColor: "#EF4444" }]} onPress={() => handleUpdateStatus(b.id, "rechazado")}>
-                    <Text style={styles.btnText}>Rechazar</Text>
-                  </Pressable>
+      {/* CUSTOM TABS */}
+      <View style={[styles.tabContainer, { borderBottomColor: colors.border }]}>
+        <Pressable style={[styles.tab, activeTab === "dashboard" && { borderBottomColor: colors.primary }]} onPress={() => setActiveTab("dashboard")}>
+          <Text style={[styles.tabText, { color: activeTab === "dashboard" ? colors.primary : colors.mutedForeground }]}>Resumen</Text>
+        </Pressable>
+        <Pressable style={[styles.tab, activeTab === "news" && { borderBottomColor: colors.primary }]} onPress={() => setActiveTab("news")}>
+          <Text style={[styles.tabText, { color: activeTab === "news" ? colors.primary : colors.mutedForeground }]}>Redactar Noticia</Text>
+        </Pressable>
+        <Pressable style={[styles.tab, activeTab === "photos" && { borderBottomColor: colors.primary }]} onPress={() => setActiveTab("photos")}>
+          <Text style={[styles.tabText, { color: activeTab === "photos" ? colors.primary : colors.mutedForeground }]}>Subir Fotos</Text>
+        </Pressable>
+      </View>
+
+      <KeyboardAwareScrollViewCompat contentContainerStyle={[styles.scroll, { paddingBottom: 40 + insets.bottom }]}>
+        
+        {/* ================= TAB 1: DASHBOARD ================= */}
+        {activeTab === "dashboard" && (
+          <>
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Métricas en vivo</Text>
+              <View style={styles.statsGrid}>
+                <StatsCard label="Beneficiarios" value={stats.total_beneficiaries || 0} icon="users" color={colors.primary} />
+                <StatsCard label="Sol. Pendientes" value={stats.pending_requests || 0} icon="clock" color="#D97706" />
+              </View>
+              <View style={styles.statsGrid}>
+                <StatsCard label="Doc. Pendientes" value={stats.pending_documents || 0} icon="paperclip" color="#DC2626" />
+                <StatsCard label="Patrocinadores" value={stats.active_sponsors || 0} icon="award" color="#059669" />
+              </View>
+            </View>
+
+            {(stats.pending_requests > 0 || stats.pending_documents > 0) && (
+              <View style={[styles.alertCard, { backgroundColor: "#FEF3C7", borderColor: "#FCD34D" }]}>
+                <Feather name="alert-triangle" size={18} color="#92400E" />
+                <View style={styles.alertContent}>
+                  <Text style={[styles.alertTitle, { color: "#92400E" }]}>Atención requerida</Text>
+                  <Text style={[styles.alertText, { color: "#78350F" }]}>
+                    Hay {stats.pending_requests} solicitudes pendientes y {stats.pending_documents} documentos sin validar.
+                  </Text>
                 </View>
               </View>
-            ))}
-          </View>
+            )}
+
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Gestión Rápida</Text>
+              {ADMIN_SECTIONS.map((item) => (
+                <Pressable
+                  key={item.label}
+                  style={({ pressed }) => [
+                    styles.sectionCard,
+                    { backgroundColor: colors.background, borderColor: colors.border, opacity: pressed ? 0.85 : 1, shadowColor: colors.foreground },
+                  ]}
+                  onPress={() => router.push(item.route as any)}
+                >
+                  <View style={[styles.sectionIcon, { backgroundColor: item.color + "15" }]}>
+                    <Feather name={item.icon} size={22} color={item.color} />
+                  </View>
+                  <View style={styles.sectionInfo}>
+                    <Text style={[styles.sectionLabel, { color: colors.foreground }]}>{item.label}</Text>
+                    <Text style={[styles.sectionDesc, { color: colors.mutedForeground }]}>{item.desc}</Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+                </Pressable>
+              ))}
+            </View>
+          </>
         )}
 
-        {/* PESTAÑA: NOTICIAS */}
+        {/* ================= TAB 2: NOTICIAS ================= */}
         {activeTab === "news" && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Nueva Noticia</Text>
-            <TextInput placeholder="Título" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} value={newsTitle} onChangeText={setNewsTitle} />
-            <TextInput placeholder="Resumen corto" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} value={newsSummary} onChangeText={setNewsSummary} />
-            <TextInput placeholder="Contenido de la noticia" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border, height: 100 }]} multiline value={newsContent} onChangeText={setNewsContent} />
+          <View style={styles.formSection}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Publicar Nueva Noticia</Text>
             
-            <Pressable style={[styles.imageBtn, { borderColor: colors.border }]} onPress={() => pickImage("news")}>
-              {newsImage ? <Image source={{ uri: newsImage }} style={styles.previewImage} /> : <Text style={{ color: colors.mutedForeground }}>Seleccionar Imagen Noticia</Text>}
-            </Pressable>
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Título principal</Text>
+              <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} placeholder="Ej. Gran victoria" placeholderTextColor={colors.mutedForeground} value={newsTitle} onChangeText={setNewsTitle} />
+            </View>
 
-            <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary }]} onPress={handlePublishNews} disabled={uploading}>
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Resumen corto</Text>
+              <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} placeholder="Breve descripción" placeholderTextColor={colors.mutedForeground} value={newsSummary} onChangeText={setNewsSummary} />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Contenido completo</Text>
+              <TextInput style={[styles.inputArea, { color: colors.foreground, borderColor: colors.border }]} placeholder="Escribe toda la historia..." placeholderTextColor={colors.mutedForeground} multiline textAlignVertical="top" value={newsContent} onChangeText={setNewsContent} />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Imagen de portada</Text>
+              <Pressable style={[styles.imageBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => pickImage("news")}>
+                {newsImage ? <Image source={{ uri: newsImage }} style={styles.previewImage} /> : (
+                  <>
+                    <Feather name="camera" size={32} color={colors.mutedForeground} />
+                    <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>Tocar para subir foto</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+
+            <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} onPress={handlePublishNews} disabled={uploading}>
               {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Publicar Noticia</Text>}
             </Pressable>
           </View>
         )}
 
-        {/* PESTAÑA: SUBIR FOTOS */}
+        {/* ================= TAB 3: FOTOS MÚLTIPLES ================= */}
         {activeTab === "photos" && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Cargar Foto a Galería</Text>
-            <TextInput placeholder="Título de la imagen" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} value={photoTitle} onChangeText={setPhotoTitle} />
-            <TextInput placeholder="Descripción o contexto" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} value={photoDesc} onChangeText={setPhotoDesc} />
+          <View style={styles.formSection}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Añadir Fotos a Galería</Text>
             
-            <Text style={[styles.label, { color: colors.foreground }]}>Asociar a un Torneo Activo (Opcional):</Text>
-            <View style={styles.tournamentList}>
-              {tournaments.map((t) => (
-                <Pressable
-                  key={t.id}
-                  style={[styles.chip, { borderColor: colors.border }, selectedTournament === t.id && { backgroundColor: colors.primary }]}
-                  onPress={() => setSelectedTournament(selectedTournament === t.id ? null : t.id)}
-                >
-                  <Text style={{ color: selectedTournament === t.id ? "#fff" : colors.foreground }}>{t.name}</Text>
-                </Pressable>
-              ))}
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Título (Aplicará a todas)</Text>
+              <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} placeholder="Ej. Torneo de Verano" placeholderTextColor={colors.mutedForeground} value={photoTitle} onChangeText={setPhotoTitle} />
             </View>
 
-            <Pressable style={[styles.imageBtn, { borderColor: colors.border }]} onPress={() => pickImage("gallery")}>
-              {galleryImage ? <Image source={{ uri: galleryImage }} style={styles.previewImage} /> : <Text style={{ color: colors.mutedForeground }}>Seleccionar Fotografía de Dispositivo</Text>}
-            </Pressable>
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Contexto (Opcional)</Text>
+              <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} placeholder="¿Qué sucedió en estas fotos?" placeholderTextColor={colors.mutedForeground} value={photoDesc} onChangeText={setPhotoDesc} />
+            </View>
 
-            <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary }]} onPress={handleUploadPhoto} disabled={uploading}>
-              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Subir al Álbum Global</Text>}
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Fotografías seleccionadas ({galleryImages.length})</Text>
+              
+              {galleryImages.length > 0 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 4 }}>
+                  {galleryImages.map((uri, index) => (
+                    <View key={index} style={styles.thumbnailContainer}>
+                      <Image source={{ uri }} style={styles.thumbnailImage} />
+                      <Pressable style={styles.removeBadge} onPress={() => removeGalleryImage(index)}>
+                        <Feather name="x" size={14} color="#FFF" />
+                      </Pressable>
+                    </View>
+                  ))}
+                  <Pressable style={[styles.addMoreBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => pickImage("gallery")}>
+                    <Feather name="plus" size={24} color={colors.mutedForeground} />
+                    <Text style={{ fontSize: 12, color: colors.mutedForeground, marginTop: 4 }}>Añadir</Text>
+                  </Pressable>
+                </ScrollView>
+              ) : (
+                <Pressable style={[styles.imageBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => pickImage("gallery")}>
+                  <Feather name="images" size={32} color={colors.mutedForeground} />
+                  <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>Tocar para seleccionar varias fotos</Text>
+                </Pressable>
+              )}
+            </View>
+
+            <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} onPress={handleUploadPhoto} disabled={uploading}>
+              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Subir {galleryImages.length > 0 ? galleryImages.length : ""} a la Galería</Text>}
             </Pressable>
           </View>
         )}
-      </ScrollView>
-    </SafeAreaView>
+
+      </KeyboardAwareScrollViewCompat>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scrollContainer: { padding: 16 },
-  tabBar: { flexDirection: "row", borderWidth: 1, borderTopWidth: 0, borderLeftWidth: 0, borderRightWidth: 0 },
-  tabItem: { flex: 1, alignItems: "center", paddingVertical: 14, borderWidth: 2, borderTopWidth: 0, borderLeftWidth: 0, borderRightWidth: 0, borderBottomColor: "transparent" },
-  tabText: { fontSize: 14, fontFamily: "Inter_700Bold" },
-  section: { gap: 12 },
-  sectionTitle: { fontSize: 20, fontFamily: "Inter_700Bold", marginBottom: 8 },
-  input: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 15 },
-  imageBtn: { height: 160, borderWidth: 1, borderStyle: "dashed", borderRadius: 12, justifyContent: "center", alignItems: "center", overflow: "hidden", marginVertical: 8 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 16 },
+  backBtn: { padding: 4 },
+  headerTitle: { color: "#FFFFFF", fontSize: 18, fontFamily: "Inter_700Bold", flex: 1, textAlign: "center" },
+  
+  tabContainer: { flexDirection: "row", borderWidth: 0, borderBottomWidth: 1 },
+  tab: { flex: 1, paddingVertical: 14, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
+  tabText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  
+  scroll: { paddingHorizontal: 20, paddingTop: 20, gap: 24 },
+  section: { gap: 14 },
+  sectionTitle: { fontSize: 18, fontFamily: "Inter_700Bold" },
+  
+  statsGrid: { flexDirection: "row", gap: 12 },
+  
+  alertCard: { flexDirection: "row", gap: 12, padding: 16, borderRadius: 14, borderWidth: 1, alignItems: "flex-start" },
+  alertContent: { flex: 1, gap: 4 },
+  alertTitle: { fontSize: 14, fontFamily: "Inter_700Bold" },
+  alertText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
+  
+  sectionCard: { flexDirection: "row", alignItems: "center", gap: 14, padding: 14, borderRadius: 14, borderWidth: 1, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  sectionIcon: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
+  sectionInfo: { flex: 1, gap: 2 },
+  sectionLabel: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  sectionDesc: { fontSize: 12, fontFamily: "Inter_400Regular" },
+
+  // Estilos de Formularios
+  formSection: { gap: 16 },
+  inputGroup: { gap: 8 },
+  inputLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, height: 50, fontSize: 15, fontFamily: "Inter_400Regular" },
+  inputArea: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingTop: 14, height: 120, fontSize: 15, fontFamily: "Inter_400Regular" },
+  imageBtn: { height: 180, borderWidth: 1, borderStyle: "dashed", borderRadius: 12, justifyContent: "center", alignItems: "center", overflow: "hidden" },
   previewImage: { width: "100%", height: "100%", resizeMode: "cover" },
-  submitBtn: { height: 50, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 8 },
+  submitBtn: { height: 54, borderRadius: 14, justifyContent: "center", alignItems: "center", marginTop: 8 },
   submitBtnText: { color: "#FFF", fontSize: 16, fontFamily: "Inter_700Bold" },
-  itemCard: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 10, marginBottom: 10 },
-  itemName: { fontSize: 16, fontFamily: "Inter_700Bold" },
-  actionRow: { flexDirection: "row", gap: 8 },
-  btnAction: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
-  btnText: { color: "#FFF", fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  label: { fontSize: 14, fontFamily: "Inter_600SemiBold", marginTop: 4 },
-  tournamentList: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 6 },
-  chip: { borderWidth: 1, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
+
+  // Estilos del Carrusel Múltiple
+  thumbnailContainer: { position: "relative", width: 100, height: 100 },
+  thumbnailImage: { width: "100%", height: "100%", borderRadius: 12, resizeMode: "cover" },
+  removeBadge: { position: "absolute", top: -6, right: -6, backgroundColor: "#EF4444", width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#FFF" },
+  addMoreBtn: { width: 100, height: 100, borderRadius: 12, borderWidth: 1, borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
 });

@@ -26,9 +26,14 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default function PerfilScreen() {
   const colors = useColors();
-  const { user, logout, isAdmin } = useAuth();
+  
+  // EXTRAEMOS LAS VARIABLES CORRECTAS DEL AUTH CONTEXT
+  const { profile, signOut, isGuest } = useAuth(); 
   const insets = useSafeAreaInsets();
   const tabBarHeight = Platform.OS === "web" ? 84 : 60;
+
+  // VERIFICAR SI EL USUARIO TIENE PERMISOS ADMINISTRATIVOS
+  const isAdmin = ["admin", "capturista", "validador", "comunicacion"].includes(profile?.role || "");
 
   const tutorItems = [
     { icon: "users" as const, label: "Mis beneficiarios", route: "/(tabs)/expedientes" },
@@ -43,12 +48,17 @@ export default function PerfilScreen() {
     { icon: "award" as const, label: "Patrocinadores", route: "/patrocinadores" },
     { icon: "bell" as const, label: "Notificaciones", route: "/notificaciones" },
   ];
+  
+  const guestItems = [
+    { icon: "bell" as const, label: "Notificaciones", route: "/notificaciones" },
+  ];
 
-  const menuItems = isAdmin ? adminItems : tutorItems;
+  // ASIGNAR EL MENÚ CORRECTO SEGÚN EL ROL
+  const menuItems = isAdmin ? adminItems : (isGuest ? guestItems : tutorItems);
 
   const handleLogout = async () => {
-    await logout();
-    router.replace("/login");
+    await signOut(); // Se usa la función signOut del contexto
+    // router.replace("/login"); ya está manejado dentro del signOut() en AuthContext
   };
 
   return (
@@ -63,7 +73,7 @@ export default function PerfilScreen() {
       ]}
       showsVerticalScrollIndicator={false}
     >
-      {/* Profile Card */}
+      {/* Tarjeta de Perfil */}
       <View style={[styles.profileCard, { backgroundColor: colors.primary }]}>
         <View style={styles.avatarWrap}>
           <Image
@@ -73,18 +83,21 @@ export default function PerfilScreen() {
           />
           <View style={[styles.roleTag, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
             <Text style={styles.roleTagText}>
-              {ROLE_LABELS[user?.role ?? "visitante"]}
+              {ROLE_LABELS[profile?.role ?? "visitante"]}
             </Text>
           </View>
         </View>
-        <Text style={styles.profileName}>{user?.name ?? "Usuario"}</Text>
-        <Text style={styles.profileEmail}>{user?.email ?? ""}</Text>
-        {user?.phone && (
-          <Text style={styles.profilePhone}>{user.phone}</Text>
+        
+        {/* Mostrar Nombre y Correo Real del Contexto */}
+        <Text style={styles.profileName}>{profile?.name ?? "Usuario"}</Text>
+        <Text style={styles.profileEmail}>{profile?.email ?? ""}</Text>
+        
+        {profile?.phone && (
+          <Text style={styles.profilePhone}>{profile.phone}</Text>
         )}
       </View>
 
-      {/* Menu Items */}
+      {/* Opciones del Menú */}
       <View style={[styles.menuSection, { backgroundColor: colors.background, borderColor: colors.border }]}>
         {menuItems.map((item, index) => (
           <Pressable
@@ -141,7 +154,7 @@ export default function PerfilScreen() {
         </Text>
       </View>
 
-      {/* Logout */}
+      {/* Botón de Logout */}
       <Pressable
         style={({ pressed }) => [
           styles.logoutButton,
@@ -149,8 +162,10 @@ export default function PerfilScreen() {
         ]}
         onPress={handleLogout}
       >
-        <Feather name="log-out" size={18} color={colors.destructive} />
-        <Text style={[styles.logoutText, { color: colors.destructive }]}>Cerrar sesión</Text>
+        <Feather name={isGuest ? "log-in" : "log-out"} size={18} color={colors.destructive} />
+        <Text style={[styles.logoutText, { color: colors.destructive }]}>
+          {isGuest ? "Iniciar sesión / Registrarse" : "Cerrar sesión"}
+        </Text>
       </Pressable>
     </ScrollView>
   );

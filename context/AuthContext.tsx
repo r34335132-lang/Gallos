@@ -1,5 +1,8 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { Session } from "@supabase/supabase-js";
+import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { supabase } from "@/lib/supabase";
 
 export type UserRole =
   | "admin"
@@ -10,7 +13,7 @@ export type UserRole =
   | "patrocinador"
   | "visitante";
 
-export interface User {
+export interface UserProfile {
   id: string;
   name: string;
   email: string;
@@ -19,99 +22,139 @@ export interface User {
   avatar?: string;
 }
 
-interface AuthContextValue {
-  user: User | null;
+interface AuthContextType {
+  session: Session | null;
+  profile: UserProfile | null;
+  isGuest: boolean; // NUEVO: Saber si está como invitado
   loading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
-  logout: () => Promise<void>;
-  isAdmin: boolean;
-  isCapturista: boolean;
-  isTutor: boolean;
+  signInAsGuest: () => Promise<void>; // NUEVO: Función para entrar sin cuenta
+  signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+const AuthContext = createContext<AuthContextType>({
+  session: null,
+  profile: null,
+  isGuest: false,
+  loading: true,
+  signInAsGuest: async () => {},
+  signOut: async () => {},
+  refreshProfile: async () => {},
+});
 
-const MOCK_USERS: Record<string, User & { password: string }> = {
-  "admin@gallos.mx": {
-    id: "u1",
-    name: "Carlos Mendoza",
-    email: "admin@gallos.mx",
-    password: "123456",
-    role: "admin",
-    phone: "442-555-0001",
-  },
-  "tutor@gallos.mx": {
-    id: "u2",
-    name: "María González",
-    email: "tutor@gallos.mx",
-    password: "123456",
-    role: "tutor",
-    phone: "442-555-0002",
-  },
-  "capturista@gallos.mx": {
-    id: "u3",
-    name: "Roberto Sánchez",
-    email: "capturista@gallos.mx",
-    password: "123456",
-    role: "capturista",
-    phone: "442-555-0003",
-  },
-  "patrocinador@gallos.mx": {
-    id: "u4",
-    name: "Grupo Industrial del Norte",
-    email: "patrocinador@gallos.mx",
-    password: "123456",
-    role: "patrocinador",
-    phone: "442-555-0004",
-  },
+// Perfil temporal falso para que la app sepa que es un visitante
+const GUEST_PROFILE: UserProfile = {
+  id: "guest-id",
+  name: "Visitante",
+  email: "invitado@gallossmiling.com",
+  role: "visitante",
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isGuest, setIsGuest] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    AsyncStorage.getItem("user")
-      .then((stored) => {
-        if (stored) setUser(JSON.parse(stored));
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  const fetchProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle(); // FIX: Cambiado a maybeSingle() para que no explote por el RLS
 
-  const login = async (email: string, _password: string): Promise<boolean> => {
-    const found = MOCK_USERS[email.toLowerCase()];
-    if (!found) return false;
-    const { password: _pw, ...userData } = found;
-    setUser(userData);
-    await AsyncStorage.setItem("user", JSON.stringify(userData));
-    return true;
+      if (error) throw error;
+      setProfile(data);
+      return data;
+    } catch (err) {
+      console.error("Error al obtener perfil de base de datos:", err);
+      setProfile(null);
+      return null;
+    }
   };
 
-  const logout = async () => {
-    setUser(null);
-    await AsyncStorage.removeItem("user");
+  useEffect(() => {
+    const initAuth = async () => {
+      // 1. Revisar si la persona estaba navegando como invitado previamente
+      const guestStatus = await AsyncStorage.getItem("isGuest");
+      if (guestStatus === "true") {
+        setIsGuest(true);
+        setProfile(GUEST_PROFILE);
+      }
+
+      // 2. Revisar sesión real de Supabase
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session);
+        if (session?.user) {
+          setIsGuest(false);
+          AsyncStorage.removeItem("isGuest"); // Limpiamos rastro de invitado si inicia sesión real
+          fetchProfile(session.user.id).then(() => setLoading(false));
+        } else {
+          setLoading(false);
+        }
+      });
+    };
+
+    initAuth();
+
+    // 3. Escuchar cambios (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, currentSession) => {
+        setSession(currentSession);
+        if (currentSession?.user) {
+          setIsGuest(false);
+          await AsyncStorage.removeItem("isGuest");
+          await fetchProfile(currentSession.user.id);
+        } else {
+          // Si cierra sesión pero NO es invitado, limpiamos el perfil
+          const guestStatus = await AsyncStorage.getItem("isGuest");
+          if (guestStatus !== "true") {
+            setProfile(null);
+          }
+        }
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const signInAsGuest = async () => {
+    setLoading(true);
+    await AsyncStorage.setItem("isGuest", "true");
+    setIsGuest(true);
+    setProfile(GUEST_PROFILE); // Le asignamos el rol "visitante" globalmente
+    setLoading(false);
+    
+    // Lo mandamos directo a la galería (o a donde prefieras)
+    router.replace("/galeria"); 
+  };
+
+  const signOut = async () => {
+    setLoading(true);
+    await supabase.auth.signOut();
+    await AsyncStorage.removeItem("isGuest"); // Quitamos el estado de invitado
+    setIsGuest(false);
+    setProfile(null);
+    setSession(null);
+    setLoading(false);
+    router.replace("/login");
+  };
+
+  const refreshProfile = async () => {
+    if (session?.user) {
+      await fetchProfile(session.user.id);
+    }
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        login,
-        logout,
-        isAdmin: user?.role === "admin",
-        isCapturista:
-          user?.role === "capturista" || user?.role === "admin",
-        isTutor: user?.role === "tutor",
-      }}
-    >
+    <AuthContext.Provider value={{ session, profile, isGuest, loading, signInAsGuest, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
-}
+export const useAuth = () => useContext(AuthContext);

@@ -1,243 +1,154 @@
-import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
 import React, { useState } from "react";
 import {
-  KeyboardAvoidingView,
-  Platform,
+  ActivityIndicator,
+  Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { Link, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
-
-type UserType = "tutor" | "patrocinador" | "admin";
-
-const USER_TYPES: { value: UserType; label: string; desc: string }[] = [
-  { value: "tutor", label: "Tutor / Familiar", desc: "Registra y da seguimiento a un beneficiario" },
-  { value: "patrocinador", label: "Patrocinador", desc: "Empresa o persona que desea apoyar" },
-  { value: "admin", label: "Personal administrativo", desc: "Colaborador de la fundación" },
-];
+import { supabase } from "@/lib/supabase";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 
 export default function Register() {
   const colors = useColors();
+  const [loading, setLoading] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [userType, setUserType] = useState<UserType>("tutor");
-  const [showPassword, setShowPassword] = useState(false);
 
-  const handleRegister = () => {
-    router.replace("/login");
+  const handleRegister = async () => {
+    if (!name || !email || !password) {
+      Alert.alert("Campos incompletos", "Por favor llena los campos obligatorios.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // 1. Crear usuario en Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (authError) throw authError;
+
+      if (authData?.user) {
+        // 2. Insertar perfil en la tabla 'users' pública con rol predeterminado 'tutor'
+        const { error: profileError } = await supabase.from("users").insert({
+          id: authData.user.id,
+          name: name,
+          email: email.toLowerCase().trim(),
+          phone: phone || null,
+          role: "tutor", // Todos los registros públicos se guardan por defecto como tutor
+        });
+
+        if (profileError) throw profileError;
+
+        Alert.alert(
+          "¡Registro exitoso!",
+          "Tu cuenta ha sido creada. Ya puedes iniciar sesión.",
+          [{ text: "OK", onPress: () => router.replace("/login") }]
+        );
+      }
+    } catch (error: any) {
+      Alert.alert("Error de registro", error.message || "Ocurrió un error inesperado.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.kav}>
-        <ScrollView
-          contentContainerStyle={[styles.scroll, Platform.OS === "web" && { paddingTop: 67 }]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.topBar}>
-            <Pressable onPress={() => router.back()} style={styles.back}>
-              <Feather name="arrow-left" size={22} color={colors.foreground} />
-            </Pressable>
-            <Text style={[styles.topTitle, { color: colors.foreground }]}>Crear cuenta</Text>
-            <View style={{ width: 22 }} />
+      <KeyboardAwareScrollViewCompat contentContainerStyle={styles.scroll}>
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: colors.foreground }]}>Crear Cuenta</Text>
+          <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+            Únete a la comunidad de Gallos Smiling
+          </Text>
+        </View>
+
+        <View style={styles.form}>
+          <Text style={[styles.label, { color: colors.foreground }]}>Nombre Completo *</Text>
+          <TextInput
+            style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
+            placeholder="Juan Pérez"
+            placeholderTextColor={colors.mutedForeground}
+            value={name}
+            onChangeText={setName}
+          />
+
+          <Text style={[styles.label, { color: colors.foreground }]}>Correo Electrónico *</Text>
+          <TextInput
+            style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
+            placeholder="ejemplo@correo.com"
+            placeholderTextColor={colors.mutedForeground}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={email}
+            onChangeText={setEmail}
+          />
+
+          <Text style={[styles.label, { color: colors.foreground }]}>Teléfono (Opcional)</Text>
+          <TextInput
+            style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
+            placeholder="4421234567"
+            placeholderTextColor={colors.mutedForeground}
+            keyboardType="phone-pad"
+            value={phone}
+            onChangeText={setPhone}
+          />
+
+          <Text style={[styles.label, { color: colors.foreground }]}>Contraseña *</Text>
+          <TextInput
+            style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
+            placeholder="Mínimo 6 caracteres"
+            placeholderTextColor={colors.mutedForeground}
+            secureTextEntry
+            autoCapitalize="none"
+            value={password}
+            onChangeText={setPassword}
+          />
+
+          <Pressable
+            style={[styles.button, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
+            onPress={handleRegister}
+            disabled={loading}
+          >
+            {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Registrarse</Text>}
+          </Pressable>
+
+          <View style={styles.footerLink}>
+            <Text style={{ color: colors.mutedForeground }}>¿Ya tienes cuenta? </Text>
+            <Link href="/login" asChild>
+              <Pressable>
+                <Text style={[styles.linkText, { color: colors.primary }]}>Inicia sesión</Text>
+              </Pressable>
+            </Link>
           </View>
-
-          <View style={styles.form}>
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.foreground }]}>Nombre completo</Text>
-              <View style={[styles.inputWrap, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-                <Feather name="user" size={18} color={colors.mutedForeground} />
-                <TextInput
-                  style={[styles.input, { color: colors.foreground }]}
-                  placeholder="Tu nombre completo"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={name}
-                  onChangeText={setName}
-                />
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.foreground }]}>Correo electrónico</Text>
-              <View style={[styles.inputWrap, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-                <Feather name="mail" size={18} color={colors.mutedForeground} />
-                <TextInput
-                  style={[styles.input, { color: colors.foreground }]}
-                  placeholder="correo@ejemplo.mx"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.foreground }]}>Teléfono</Text>
-              <View style={[styles.inputWrap, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-                <Feather name="phone" size={18} color={colors.mutedForeground} />
-                <TextInput
-                  style={[styles.input, { color: colors.foreground }]}
-                  placeholder="442-000-0000"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={phone}
-                  onChangeText={setPhone}
-                  keyboardType="phone-pad"
-                />
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.foreground }]}>Contraseña</Text>
-              <View style={[styles.inputWrap, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-                <Feather name="lock" size={18} color={colors.mutedForeground} />
-                <TextInput
-                  style={[styles.input, { color: colors.foreground }]}
-                  placeholder="Mínimo 6 caracteres"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                />
-                <Pressable onPress={() => setShowPassword((v) => !v)}>
-                  <Feather name={showPassword ? "eye-off" : "eye"} size={18} color={colors.mutedForeground} />
-                </Pressable>
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.foreground }]}>Confirmar contraseña</Text>
-              <View style={[styles.inputWrap, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-                <Feather name="lock" size={18} color={colors.mutedForeground} />
-                <TextInput
-                  style={[styles.input, { color: colors.foreground }]}
-                  placeholder="Repite tu contraseña"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry
-                />
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.foreground }]}>Tipo de usuario</Text>
-              <View style={styles.typeGrid}>
-                {USER_TYPES.map((t) => (
-                  <Pressable
-                    key={t.value}
-                    style={[
-                      styles.typeCard,
-                      {
-                        backgroundColor: userType === t.value ? colors.primary + "12" : colors.muted,
-                        borderColor: userType === t.value ? colors.primary : colors.border,
-                      },
-                    ]}
-                    onPress={() => setUserType(t.value)}
-                  >
-                    <View style={[styles.typeRadio, { borderColor: userType === t.value ? colors.primary : colors.border }]}>
-                      {userType === t.value && (
-                        <View style={[styles.typeRadioFill, { backgroundColor: colors.primary }]} />
-                      )}
-                    </View>
-                    <View style={styles.typeText}>
-                      <Text style={[styles.typeLabel, { color: colors.foreground }]}>{t.label}</Text>
-                      <Text style={[styles.typeDesc, { color: colors.mutedForeground }]}>{t.desc}</Text>
-                    </View>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.button,
-                { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
-              ]}
-              onPress={handleRegister}
-            >
-              <Text style={styles.buttonText}>Crear cuenta</Text>
-            </Pressable>
-
-            <Pressable style={styles.loginLink} onPress={() => router.back()}>
-              <Text style={[styles.loginLinkText, { color: colors.mutedForeground }]}>
-                Ya tienes cuenta?{" "}
-                <Text style={{ color: colors.primaryLight }}>Iniciar sesión</Text>
-              </Text>
-            </Pressable>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+      </KeyboardAwareScrollViewCompat>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  kav: { flex: 1 },
-  scroll: { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 40 },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 16,
-  },
-  back: { padding: 4 },
-  topTitle: { fontSize: 18, fontFamily: "Inter_700Bold" },
+  scroll: { padding: 24, justifyContent: "center", flexGrow: 1 },
+  header: { marginBottom: 32, itemsAlign: "center" },
+  title: { fontSize: 28, fontFamily: "Inter_700Bold", textAlign: "center" },
+  subtitle: { fontSize: 16, textAlign: "center", marginTop: 8 },
   form: { gap: 16 },
-  inputGroup: { gap: 6 },
-  label: { fontSize: 14, fontFamily: "Inter_500Medium" },
-  inputWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 52,
-  },
-  input: { flex: 1, fontSize: 16, fontFamily: "Inter_400Regular" },
-  typeGrid: { gap: 10 },
-  typeCard: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-  },
-  typeRadio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  typeRadioFill: { width: 10, height: 10, borderRadius: 5 },
-  typeText: { flex: 1, gap: 2 },
-  typeLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  typeDesc: { fontSize: 12, fontFamily: "Inter_400Regular" },
-  button: {
-    height: 54,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-  },
-  buttonText: { color: "#FFFFFF", fontSize: 17, fontFamily: "Inter_700Bold" },
-  loginLink: { alignItems: "center", paddingVertical: 8 },
-  loginLinkText: { fontSize: 14, fontFamily: "Inter_400Regular" },
+  label: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  input: { height: 50, borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, fontSize: 16 },
+  button: { height: 52, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 12 },
+  buttonText: { color: "#FFF", fontSize: 16, fontFamily: "Inter_700Bold" },
+  footerLink: { flexDirection: "row", justifyContent: "center", marginTop: 16 },
+  linkText: { fontFamily: "Inter_700Bold" },
 });

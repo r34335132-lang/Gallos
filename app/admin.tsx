@@ -38,24 +38,21 @@ export default function AdminScreen() {
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [uploading, setUploading] = useState(false);
 
-  // Estados de Estadísticas
   const [stats, setStats] = useState({
     total_beneficiaries: 0, pending_requests: 0, 
     pending_documents: 0, active_sponsors: 0,
     approved_requests: 0, rejected_requests: 0
   });
 
-  // Estados Formulario Noticias
   const [newsTitle, setNewsTitle] = useState("");
   const [newsCategory, setNewsCategory] = useState("Fundación");
   const [newsSummary, setNewsSummary] = useState("");
   const [newsContent, setNewsContent] = useState("");
   const [newsImage, setNewsImage] = useState<string | null>(null);
 
-  // Estados Formulario Fotos (Múltiples)
   const [photoTitle, setPhotoTitle] = useState("");
   const [photoDesc, setPhotoDesc] = useState("");
-  const [galleryImages, setGalleryImages] = useState<string[]>([]); // <- Ahora es un arreglo
+  const [galleryImages, setGalleryImages] = useState<string[]>([]);
 
   useEffect(() => {
     loadStats();
@@ -66,26 +63,33 @@ export default function AdminScreen() {
     if (data && !error) setStats(data);
   };
 
-  // Función corregida: Evitamos .arrayBuffer() que congela React Native
+  // ✅ SOLUCIÓN AL BUG: Usamos FormData, que es la forma 100% compatible con React Native
   const uploadImageToStorage = async (fileUri: string): Promise<string | null> => {
     try {
-      const fileExt = fileUri.split(".").pop() || "jpg";
+      const fileExt = fileUri.split(".").pop() || "jpeg";
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
       const filePath = `uploads/${fileName}`;
 
-      const response = await fetch(fileUri);
-      const blob = await response.blob(); // Se pasa directo como Blob
+      const formData = new FormData();
+      formData.append("file", {
+        uri: fileUri,
+        name: fileName,
+        type: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`
+      } as any);
 
       const { error: uploadError } = await supabase.storage
         .from("img")
-        .upload(filePath, blob, { contentType: `image/${fileExt}` });
+        .upload(filePath, formData);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error("❌ Error de Supabase Storage:", uploadError);
+        return null;
+      }
 
       const { data } = supabase.storage.from("img").getPublicUrl(filePath);
       return data.publicUrl;
     } catch (error) {
-      console.error("Error al subir imagen:", error);
+      console.error("❌ Error de red / React Native:", error);
       return null;
     }
   };
@@ -95,8 +99,8 @@ export default function AdminScreen() {
     
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: !isGallery, // Expo no permite editar si se eligen múltiples
-      allowsMultipleSelection: isGallery, // Activar selección múltiple para la galería
+      allowsEditing: !isGallery, 
+      allowsMultipleSelection: isGallery, 
       quality: 0.8,
     });
 
@@ -119,7 +123,13 @@ export default function AdminScreen() {
     setUploading(true);
     let publicUrl = null;
 
-    if (newsImage) publicUrl = await uploadImageToStorage(newsImage);
+    if (newsImage) {
+      publicUrl = await uploadImageToStorage(newsImage);
+      if (!publicUrl) {
+        setUploading(false);
+        return Alert.alert("Error", "No se pudo subir la foto de la noticia.");
+      }
+    }
 
     const { error } = await supabase.from("news").insert({
       title: newsTitle,
@@ -136,7 +146,8 @@ export default function AdminScreen() {
       setNewsTitle(""); setNewsSummary(""); setNewsContent(""); setNewsImage(null);
       setActiveTab("dashboard");
     } else {
-      Alert.alert("Error", "No se pudo publicar la noticia.");
+      console.error("❌ Error al insertar noticia en BD:", error);
+      Alert.alert("Error de permisos", "No se pudo guardar la noticia en la base de datos.");
     }
   };
 
@@ -146,18 +157,21 @@ export default function AdminScreen() {
 
     let successCount = 0;
 
-    // Subimos todas las fotos del arreglo una por una
     for (const uri of galleryImages) {
       const publicUrl = await uploadImageToStorage(uri);
 
       if (publicUrl) {
         const { error } = await supabase.from("gallery_photos").insert({
-          title: photoTitle, // Aplicamos el mismo título y desc a las fotos del mismo lote
+          title: photoTitle,
           description: photoDesc,
           image_url: publicUrl,
         });
 
-        if (!error) successCount++;
+        if (!error) {
+          successCount++;
+        } else {
+          console.error("❌ Error BD gallery_photos:", error);
+        }
       }
     }
 
@@ -167,7 +181,7 @@ export default function AdminScreen() {
       setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]);
       setActiveTab("dashboard");
     } else {
-      Alert.alert("Error", "No se pudieron subir las imágenes.");
+      Alert.alert("Error", "Revisa la consola. No se pudieron subir o guardar las imágenes.");
     }
   };
 
@@ -188,7 +202,7 @@ export default function AdminScreen() {
           <Text style={[styles.tabText, { color: activeTab === "dashboard" ? colors.primary : colors.mutedForeground }]}>Resumen</Text>
         </Pressable>
         <Pressable style={[styles.tab, activeTab === "news" && { borderBottomColor: colors.primary }]} onPress={() => setActiveTab("news")}>
-          <Text style={[styles.tabText, { color: activeTab === "news" ? colors.primary : colors.mutedForeground }]}>Redactar Noticia</Text>
+          <Text style={[styles.tabText, { color: activeTab === "news" ? colors.primary : colors.mutedForeground }]}>Redactar</Text>
         </Pressable>
         <Pressable style={[styles.tab, activeTab === "photos" && { borderBottomColor: colors.primary }]} onPress={() => setActiveTab("photos")}>
           <Text style={[styles.tabText, { color: activeTab === "photos" ? colors.primary : colors.mutedForeground }]}>Subir Fotos</Text>
@@ -211,18 +225,6 @@ export default function AdminScreen() {
                 <StatsCard label="Patrocinadores" value={stats.active_sponsors || 0} icon="award" color="#059669" />
               </View>
             </View>
-
-            {(stats.pending_requests > 0 || stats.pending_documents > 0) && (
-              <View style={[styles.alertCard, { backgroundColor: "#FEF3C7", borderColor: "#FCD34D" }]}>
-                <Feather name="alert-triangle" size={18} color="#92400E" />
-                <View style={styles.alertContent}>
-                  <Text style={[styles.alertTitle, { color: "#92400E" }]}>Atención requerida</Text>
-                  <Text style={[styles.alertText, { color: "#78350F" }]}>
-                    Hay {stats.pending_requests} solicitudes pendientes y {stats.pending_documents} documentos sin validar.
-                  </Text>
-                </View>
-              </View>
-            )}
 
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Gestión Rápida</Text>
@@ -287,7 +289,7 @@ export default function AdminScreen() {
           </View>
         )}
 
-        {/* ================= TAB 3: FOTOS MÚLTIPLES ================= */}
+        {/* ================= TAB 3: FOTOS ================= */}
         {activeTab === "photos" && (
           <View style={styles.formSection}>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Añadir Fotos a Galería</Text>
@@ -344,29 +346,22 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 16 },
   backBtn: { padding: 4 },
   headerTitle: { color: "#FFFFFF", fontSize: 18, fontFamily: "Inter_700Bold", flex: 1, textAlign: "center" },
-  
   tabContainer: { flexDirection: "row", borderWidth: 0, borderBottomWidth: 1 },
   tab: { flex: 1, paddingVertical: 14, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
   tabText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  
   scroll: { paddingHorizontal: 20, paddingTop: 20, gap: 24 },
   section: { gap: 14 },
   sectionTitle: { fontSize: 18, fontFamily: "Inter_700Bold" },
-  
   statsGrid: { flexDirection: "row", gap: 12 },
-  
   alertCard: { flexDirection: "row", gap: 12, padding: 16, borderRadius: 14, borderWidth: 1, alignItems: "flex-start" },
   alertContent: { flex: 1, gap: 4 },
   alertTitle: { fontSize: 14, fontFamily: "Inter_700Bold" },
   alertText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
-  
   sectionCard: { flexDirection: "row", alignItems: "center", gap: 14, padding: 14, borderRadius: 14, borderWidth: 1, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
   sectionIcon: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
   sectionInfo: { flex: 1, gap: 2 },
   sectionLabel: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   sectionDesc: { fontSize: 12, fontFamily: "Inter_400Regular" },
-
-  // Estilos de Formularios
   formSection: { gap: 16 },
   inputGroup: { gap: 8 },
   inputLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
@@ -376,8 +371,6 @@ const styles = StyleSheet.create({
   previewImage: { width: "100%", height: "100%", resizeMode: "cover" },
   submitBtn: { height: 54, borderRadius: 14, justifyContent: "center", alignItems: "center", marginTop: 8 },
   submitBtnText: { color: "#FFF", fontSize: 16, fontFamily: "Inter_700Bold" },
-
-  // Estilos del Carrusel Múltiple
   thumbnailContainer: { position: "relative", width: 100, height: 100 },
   thumbnailImage: { width: "100%", height: "100%", borderRadius: 12, resizeMode: "cover" },
   removeBadge: { position: "absolute", top: -6, right: -6, backgroundColor: "#EF4444", width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#FFF" },

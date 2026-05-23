@@ -4,38 +4,102 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
-  Platform,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { supabase } from "@/lib/supabase";
 
 const { width } = Dimensions.get("window");
-// Calculamos el ancho para 2 columnas con un gap (espaciado) de 16px
-const COLUMN_WIDTH = (width - 48) / 2;
 
-interface Photo {
+interface GroupedPost {
   id: string;
   title: string;
   description: string;
-  image_url: string;
-  tournaments?: { name: string } | null;
+  tournamentName?: string | null;
+  images: string[];
 }
+
+// Subcomponente que renderiza cada publicación con el diseño exacto de Noticias
+const GalleryPostCard = ({ post, colors }: { post: GroupedPost; colors: any }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const handleScroll = (event: any) => {
+    const slideSize = event.nativeEvent.layoutMeasurement.width;
+    const index = event.nativeEvent.contentOffset.x / slideSize;
+    setCurrentIndex(Math.round(index));
+  };
+
+  return (
+    <View style={styles.postContainer}>
+      {/* Imagen / Carrusel (Ocupa el 100% del ancho, sin bordes) */}
+      <View style={styles.imageContainer}>
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={200}
+        >
+          {post.images.map((imgUri, index) => (
+            <Image key={index} source={{ uri: imgUri }} style={[styles.image, { width }]} resizeMode="cover" />
+          ))}
+        </ScrollView>
+
+        {/* Indicador de Carrusel estilo Instagram */}
+        {post.images.length > 1 && (
+          <View style={styles.carouselBadge}>
+            <Text style={styles.carouselBadgeText}>
+              {currentIndex + 1} / {post.images.length}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Contenido (Textos con el mismo diseño de Noticias) */}
+      <View style={styles.content}>
+        {post.tournamentName && (
+          <View style={[styles.categoryBadge, { backgroundColor: colors.primary + "18" }]}>
+            <Text style={[styles.categoryText, { color: colors.primary }]}>
+              🏆 {post.tournamentName}
+            </Text>
+          </View>
+        )}
+
+        {post.title ? (
+          <Text style={[styles.title, { color: colors.foreground }]}>
+            {post.title}
+          </Text>
+        ) : null}
+
+        {post.description ? (
+          <Text style={[styles.bodyText, { color: colors.foreground }]}>
+            {post.description}
+          </Text>
+        ) : null}
+      </View>
+
+      {/* Divisor al final de cada publicación */}
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+    </View>
+  );
+};
 
 export default function Galeria() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [posts, setPosts] = useState<GroupedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchPhotos = async () => {
+  const fetchAndGroupPhotos = async () => {
     try {
       const { data, error } = await supabase
         .from("gallery_photos")
@@ -49,7 +113,31 @@ export default function Galeria() {
         .order("upload_date", { ascending: false });
 
       if (error) throw error;
-      setPhotos(data || []);
+
+      // Agrupamos las fotos si tienen el mismo título/descripción
+      const grouped = (data || []).reduce((acc: GroupedPost[], curr) => {
+        const key = (curr.title || curr.description) ? `${curr.title}|${curr.description}` : curr.id;
+        const existingGroup = acc.find(g => g.id === key || (`${g.title}|${g.description}` === key));
+
+        if (existingGroup) {
+          existingGroup.images.push(curr.image_url);
+        } else {
+          const tournamentName = Array.isArray(curr.tournaments) 
+            ? curr.tournaments[0]?.name 
+            : curr.tournaments?.name;
+
+          acc.push({
+            id: key,
+            title: curr.title || "",
+            description: curr.description || "",
+            tournamentName: tournamentName,
+            images: [curr.image_url],
+          });
+        }
+        return acc;
+      }, []);
+
+      setPosts(grouped);
     } catch (error) {
       console.error("Error al cargar la galería:", error);
     } finally {
@@ -59,12 +147,12 @@ export default function Galeria() {
   };
 
   useEffect(() => {
-    fetchPhotos();
+    fetchAndGroupPhotos();
   }, []);
 
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchPhotos();
+    fetchAndGroupPhotos();
   };
 
   if (loading && !refreshing) {
@@ -72,7 +160,7 @@ export default function Galeria() {
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={{ color: colors.mutedForeground, marginTop: 12, fontFamily: "Inter_500Medium" }}>
-          Cargando recuerdos...
+          Cargando galería...
         </Text>
       </View>
     );
@@ -80,36 +168,23 @@ export default function Galeria() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* HEADER ELEGANTE */}
-      <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 20 : 10) }]}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.backButton,
-            { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-          ]}
-        >
-          <Feather name="chevron-left" size={24} color={colors.foreground} />
+      {/* ENCABEZADO ESTÁNDAR DE LA APP */}
+      <View style={[styles.header, { backgroundColor: colors.primary, paddingTop: insets.top + (Platform.OS === "web" ? 67 : 16) }]}>
+        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+          <Feather name="arrow-left" size={22} color="#FFFFFF" />
         </Pressable>
-        <View style={styles.headerTextContainer}>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Galería Pública</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.mutedForeground }]}>
-            Nuestra comunidad en acción
-          </Text>
-        </View>
+        <Text style={styles.headerTitle}>Galería Pública</Text>
+        <View style={{ width: 22 }} />
       </View>
 
-      {/* LISTA DE FOTOS */}
+      {/* FEED DE PUBLICACIONES */}
       <FlatList
-        data={photos}
+        data={posts}
         keyExtractor={(item) => item.id}
-        numColumns={2}
         contentContainerStyle={[
-          styles.grid,
-          photos.length === 0 && styles.emptyGrid, // Si no hay fotos, centramos el contenido
+          posts.length === 0 && styles.emptyFeed,
           { paddingBottom: insets.bottom + 40 }
         ]}
-        columnWrapperStyle={photos.length > 0 ? styles.row : undefined}
         refreshing={refreshing}
         onRefresh={handleRefresh}
         showsVerticalScrollIndicator={false}
@@ -120,42 +195,11 @@ export default function Galeria() {
             </View>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>Aún no hay fotos</Text>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              Las fotos publicadas por los administradores aparecerán aquí. ¡Desliza hacia abajo para recargar!
+              Las fotos publicadas aparecerán aquí. ¡Desliza hacia abajo para recargar!
             </Text>
           </View>
         }
-        renderItem={({ item }) => {
-          // Extraer nombre del torneo de forma segura
-          const tournamentName = Array.isArray(item.tournaments) 
-            ? item.tournaments[0]?.name 
-            : item.tournaments?.name;
-
-          return (
-            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.foreground }]}>
-              <Image source={{ uri: item.image_url }} style={styles.image} />
-              
-              <View style={styles.info}>
-                {tournamentName && (
-                  <View style={[styles.tagContainer, { backgroundColor: colors.primary + "15" }]}>
-                    <Text style={[styles.tournamentTag, { color: colors.primary }]} numberOfLines={1}>
-                      🏆 {tournamentName}
-                    </Text>
-                  </View>
-                )}
-                
-                <Text style={[styles.title, { color: colors.foreground }]} numberOfLines={1}>
-                  {item.title || "Sin título"}
-                </Text>
-                
-                {item.description ? (
-                  <Text style={[styles.desc, { color: colors.mutedForeground }]} numberOfLines={2}>
-                    {item.description}
-                  </Text>
-                ) : null}
-              </View>
-            </View>
-          );
-        }}
+        renderItem={({ item }) => <GalleryPostCard post={item} colors={colors} />}
       />
     </View>
   );
@@ -165,51 +209,83 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   
-  // Header
+  // Header Estándar
   header: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,0,0,0.05)",
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingBottom: 16,
   },
-  headerTextContainer: {
-    gap: 4,
+  backBtn: { padding: 4 },
+  headerTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontFamily: "Inter_700Bold",
+    flex: 1,
+    textAlign: "center",
   },
-  headerTitle: { fontSize: 28, fontFamily: "Inter_700Bold" },
-  headerSubtitle: { fontSize: 15, fontFamily: "Inter_400Regular" },
   
-  // Grid
-  grid: { padding: 16, gap: 16 },
-  row: { gap: 16 },
-  emptyGrid: { flexGrow: 1, justifyContent: "center" },
-  
-  // Card
-  card: {
-    width: COLUMN_WIDTH,
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: "hidden",
-    // Sombras sutiles
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
+  // Feed List
+  emptyFeed: { flexGrow: 1, justifyContent: "center" },
+  postContainer: {
+    marginBottom: 10,
   },
-  image: { width: "100%", height: 160, resizeMode: "cover" },
-  info: { padding: 12, gap: 6 },
-  tagContainer: { alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  tournamentTag: { fontSize: 10, fontFamily: "Inter_700Bold" },
-  title: { fontSize: 15, fontFamily: "Inter_700Bold" },
-  desc: { fontSize: 12, lineHeight: 16, fontFamily: "Inter_400Regular" },
+  
+  // Componentes heredados del diseño de Noticias
+  imageContainer: {
+    position: "relative",
+    width: "100%",
+    height: 280, // Misma altura que la imagen del NewsDetail
+    backgroundColor: "#F3F4F6",
+  },
+  image: {
+    height: 280,
+  },
+  carouselBadge: {
+    position: "absolute",
+    top: 16,
+    right: 16,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  carouselBadgeText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+  },
+  content: {
+    padding: 20,
+    gap: 16,
+  },
+  categoryBadge: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  categoryText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  title: {
+    fontSize: 22,
+    fontFamily: "Inter_700Bold",
+    lineHeight: 30,
+  },
+  bodyText: {
+    fontSize: 16,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 26,
+  },
+  divider: {
+    height: 8, // Divisor grueso estilo feed nativo (opcional, puedes poner 1 si quieres línea delgada)
+    opacity: 0.5,
+  },
 
   // Empty State
   emptyContainer: { alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },

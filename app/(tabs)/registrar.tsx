@@ -23,6 +23,11 @@ export default function RegistrarBeneficiarioScreen() {
   const [tutorName, setTutorName] = useState("");
   const [documents, setDocuments] = useState<Record<string, DocumentPicker.DocumentPickerResult>>({});
 
+  // =========================================================================
+  // ⚠️ PEGA AQUÍ EL LINK PÚBLICO DEL PDF QUE SUBISTE A SUPABASE
+  // =========================================================================
+  const URL_DEL_PDF = "https://jfutdmtjcunkvefojlgm.supabase.co/storage/v1/object/public/img/documents/Gallos%20Smiling%20-%20Carta%20Responsiva.pdf"; 
+
   const pickDocument = async (docType: string) => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -184,14 +189,15 @@ export default function RegistrarBeneficiarioScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.infoTitle, { color: colors.primary }]}>Formatos Requeridos</Text>
                 <Text style={[styles.infoText, { color: colors.foreground }]}>
-                  Descarga la Carta Responsiva y de Uso de Imagen. Llénala, fírmala y súbela en la lista de abajo.
+                  Descarga la Carta Responsiva y de Uso de Imagen. Llénala, fírmala y súbela en la lista de abajo junto con los demás documentos.
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                  <Pressable style={[styles.downloadBtn, { backgroundColor: '#EF4444' }]} onPress={() => Linking.openURL('URL_DE_TU_PDF_AQUI')}>
-                    <Text style={styles.downloadBtnText}>PDF</Text>
-                  </Pressable>
-                  <Pressable style={[styles.downloadBtn, { backgroundColor: '#2563EB' }]} onPress={() => Linking.openURL('URL_DE_TU_DOCX_AQUI')}>
-                    <Text style={styles.downloadBtnText}>Word</Text>
+                  <Pressable 
+                    style={[styles.downloadBtn, { backgroundColor: '#EF4444' }]} 
+                    onPress={() => Linking.openURL(URL_DEL_PDF)}
+                  >
+                    <Feather name="file-text" size={16} color="#FFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.downloadBtnText}>Descargar Formato (PDF)</Text>
                   </Pressable>
                 </View>
               </View>
@@ -256,7 +262,7 @@ const styles = StyleSheet.create({
   infoBox: { flexDirection: "row", borderWidth: 1, borderRadius: 12, padding: 16, gap: 12, marginBottom: 20 },
   infoTitle: { fontSize: 15, fontFamily: "Inter_700Bold", marginBottom: 4 },
   infoText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20 },
-  downloadBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  downloadBtn: { flex: 1, flexDirection: 'row', paddingVertical: 12, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   downloadBtnText: { color: "#FFF", fontSize: 13, fontFamily: "Inter_600SemiBold" },
   docList: { gap: 12 },
   docItem: { flexDirection: "row", alignItems: "center", padding: 12, borderWidth: 1, borderRadius: 12, gap: 12 },

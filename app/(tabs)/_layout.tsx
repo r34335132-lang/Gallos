@@ -4,6 +4,7 @@ import { Feather } from "@expo/vector-icons";
 import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 import { useColors } from "@/hooks/useColors";
+import { usePushNotifications } from "@/hooks/usePushNotifications"; // <-- Importación del hook
 
 export default function TabLayout() {
   const colors = useColors();
@@ -11,6 +12,9 @@ export default function TabLayout() {
   const isDark = colorScheme === "dark";
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+
+  // Inicializar las notificaciones push al cargar la app
+  usePushNotifications(); // <-- Ejecución del hook
 
   return (
     <Tabs

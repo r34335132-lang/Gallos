@@ -24,7 +24,7 @@ export default function RegistrarBeneficiarioScreen() {
   const [documents, setDocuments] = useState<Record<string, DocumentPicker.DocumentPickerResult>>({});
 
   // =========================================================================
-  // ⚠️ PEGA AQUÍ EL LINK PÚBLICO DEL PDF QUE SUBISTE A SUPABASE
+  // ⚠️ LINK PÚBLICO DEL PDF QUE SUBISTE A SUPABASE
   // =========================================================================
   const URL_DEL_PDF = "https://jfutdmtjcunkvefojlgm.supabase.co/storage/v1/object/public/img/documents/Gallos%20Smiling%20-%20Carta%20Responsiva.pdf"; 
 
@@ -114,6 +114,39 @@ export default function RegistrarBeneficiarioScreen() {
       }
 
       Alert.alert("¡Registro Exitoso!", "El beneficiario y sus documentos han sido enviados a revisión.");
+
+      // --- ENVÍO DE PUSH NOTIFICATIONS ---
+      try {
+        const { data: admins } = await supabase
+          .from('users')
+          .select('push_token')
+          .in('role', ['admin', 'validador', 'capturista'])
+          .not('push_token', 'is', null);
+
+        if (admins && admins.length > 0) {
+          const messages = admins.map(admin => ({
+            to: admin.push_token,
+            sound: 'default',
+            title: '¡Nuevo Beneficiario!',
+            body: `Se ha registrado una nueva solicitud a nombre de ${beneficiaryName}.`,
+            data: { route: '/(tabs)/expedientes' },
+          }));
+
+          await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Accept-encoding': 'gzip, deflate',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(messages),
+          });
+        }
+      } catch (e) {
+        console.log("Error enviando push notification", e);
+      }
+      // ------------------------------------
+
       router.replace("/(tabs)/");
 
     } catch (error: any) {

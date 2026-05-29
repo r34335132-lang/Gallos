@@ -33,7 +33,7 @@ const ADMIN_SECTIONS = [
   { icon: "bar-chart-2" as const, label: "Estadísticas", desc: "Ver reportes y métricas", route: "/estadisticas", color: "#7C3AED" },
 ];
 
-type AdminTab = "dashboard" | "news" | "photos" | "users";
+type AdminTab = "dashboard" | "news" | "photos" | "sponsors" | "users";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Administrador",
@@ -46,6 +46,7 @@ const TAB_PERMISSIONS: Record<AdminTab, string[]> = {
   dashboard: ["admin", "capturista", "validador", "comunicacion"],
   news: ["admin", "comunicacion"],
   photos: ["admin", "comunicacion"],
+  sponsors: ["admin", "comunicacion"],
   users: ["admin"],
 };
 
@@ -57,6 +58,8 @@ const SECTION_PERMISSIONS: Record<string, string[]> = {
   "/patrocinadores": ["admin"],
   "/estadisticas": ["admin"],
 };
+
+const SPONSOR_LEVELS = ["Oro", "Plata", "Bronce", "Benefactor principal", "Apoyo en especie"];
 
 export default function AdminScreen() {
   const colors = useColors();
@@ -86,11 +89,20 @@ export default function AdminScreen() {
 
   // Estados para Galería
   const [recentPhotos, setRecentPhotos] = useState<any[]>([]);
-  const [editingGalleryId, setEditingGalleryId] = useState<string | null>(null); // Guardará el título del álbum
-  const [originalGalleryMapping, setOriginalGalleryMapping] = useState<Record<string, string>>({}); // Mapa de url -> id de BD
+  const [editingGalleryId, setEditingGalleryId] = useState<string | null>(null);
+  const [originalGalleryMapping, setOriginalGalleryMapping] = useState<Record<string, string>>({});
   const [photoTitle, setPhotoTitle] = useState("");
   const [photoDesc, setPhotoDesc] = useState("");
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
+
+  // Estados para Patrocinadores
+  const [recentSponsors, setRecentSponsors] = useState<any[]>([]);
+  const [editingSponsorId, setEditingSponsorId] = useState<string | null>(null);
+  const [sponsorName, setSponsorName] = useState("");
+  const [sponsorLevel, setSponsorLevel] = useState("Bronce");
+  const [sponsorDesc, setSponsorDesc] = useState("");
+  const [sponsorContact, setSponsorContact] = useState("");
+  const [sponsorLogo, setSponsorLogo] = useState<string | null>(null);
 
   // Estados para Usuarios
   const [staffName, setStaffName] = useState("");
@@ -124,12 +136,13 @@ export default function AdminScreen() {
 
   const loadAdminContent = async () => {
     if (canPublishContent) {
+      // Cargar Noticias
       const { data: newsData } = await supabase.from("news").select("*").order("created_at", { ascending: false }).limit(10);
       if (newsData) setRecentNews(newsData);
 
+      // Cargar Fotos
       const { data: photoData } = await supabase.from("gallery_photos").select("*").order("upload_date", { ascending: false });
       if (photoData) {
-        // Agrupamos las fotos por título para que en la lista se vea 1 ítem por "Álbum/Evento"
         const uniqueTitles = new Set();
         const groupedPhotos = [];
         for (const photo of photoData) {
@@ -140,6 +153,10 @@ export default function AdminScreen() {
         }
         setRecentPhotos(groupedPhotos.slice(0, 10));
       }
+
+      // Cargar Patrocinadores
+      const { data: sponsorData } = await supabase.from("sponsors").select("*").order("created_at", { ascending: false }).limit(15);
+      if (sponsorData) setRecentSponsors(sponsorData);
     }
   };
 
@@ -173,7 +190,7 @@ export default function AdminScreen() {
     }
   };
 
-  const pickImage = async (type: "news" | "gallery") => {
+  const pickImage = async (type: "news" | "gallery" | "sponsor") => {
     const isGallery = type === "gallery";
     
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -186,9 +203,11 @@ export default function AdminScreen() {
     if (!result.canceled && result.assets.length > 0) {
       if (type === "news") {
         setNewsImage(result.assets[0].uri);
-      } else {
+      } else if (type === "gallery") {
         const newUris = result.assets.map(a => a.uri);
         setGalleryImages(prev => [...prev, ...newUris]);
+      } else if (type === "sponsor") {
+        setSponsorLogo(result.assets[0].uri);
       }
     }
   };
@@ -197,6 +216,7 @@ export default function AdminScreen() {
     setGalleryImages(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
+  // --- SELECCIÓN PARA EDICIÓN ---
   const selectNewsForEdit = (item: any) => {
     setEditingNewsId(item.id);
     setNewsTitle(item.title || "");
@@ -204,26 +224,18 @@ export default function AdminScreen() {
     setNewsContent(item.content || "");
     setNewsCategory(item.category || "Fundación");
     setNewsImage(item.image_url || null);
-    
-    // Auto-scroll al inicio (opcional pero ayuda a la experiencia)
   };
 
   const selectGalleryForEdit = async (item: any) => {
     setUploading(true);
-    // Buscar TODAS las fotos de la base de datos que pertenezcan a este título/álbum
-    const { data, error } = await supabase
-      .from("gallery_photos")
-      .select("*")
-      .eq("title", item.title);
+    const { data, error } = await supabase.from("gallery_photos").select("*").eq("title", item.title);
 
     if (data && !error) {
-      setEditingGalleryId(item.title); // Usamos el título como identificador de la edición
+      setEditingGalleryId(item.title);
       setPhotoTitle(item.title || "");
       setPhotoDesc(data[0]?.description || "");
       setGalleryImages(data.map((d: any) => d.image_url));
 
-      // Guardar mapeo de URL original -> ID de la base de datos
-      // Esto nos servirá para saber qué ID borrar si el usuario elimina una foto de la vista
       const mapping: Record<string, string> = {};
       data.forEach((d: any) => {
         if (d.image_url) mapping[d.image_url] = d.id;
@@ -233,6 +245,16 @@ export default function AdminScreen() {
     setUploading(false);
   };
 
+  const selectSponsorForEdit = (item: any) => {
+    setEditingSponsorId(item.id);
+    setSponsorName(item.name || "");
+    setSponsorLevel(item.level || "Bronce");
+    setSponsorDesc(item.description || "");
+    setSponsorContact(item.contact_name || "");
+    setSponsorLogo(item.logo_url || null);
+  };
+
+  // --- GUARDADO DE DATOS ---
   const handlePublishNews = async () => {
     if (!canPublishContent) return Alert.alert("Sin permisos", "Tu rol no puede publicar.");
     if (!newsTitle || !newsContent) return Alert.alert("Campos vacíos", "Completa título y contenido.");
@@ -258,7 +280,6 @@ export default function AdminScreen() {
     };
 
     let error;
-
     if (editingNewsId) {
       const { error: updateError } = await supabase.from("news").update(payload).eq("id", editingNewsId);
       error = updateError;
@@ -286,11 +307,8 @@ export default function AdminScreen() {
     let successCount = 0;
 
     if (editingGalleryId) {
-      // 1. Separamos las imágenes que ya estaban en BD (http) de las nuevas locales (file://)
       const keptUrls = galleryImages.filter(uri => uri.startsWith("http"));
       const newUris = galleryImages.filter(uri => !uri.startsWith("http"));
-
-      // 2. Buscamos qué imágenes se eliminaron de la vista y las borramos de la base de datos
       const originalUrls = Object.keys(originalGalleryMapping);
       const deletedUrls = originalUrls.filter(url => !keptUrls.includes(url));
       const deletedIds = deletedUrls.map(url => originalGalleryMapping[url]);
@@ -299,38 +317,24 @@ export default function AdminScreen() {
         await supabase.from("gallery_photos").delete().in("id", deletedIds);
       }
 
-      // 3. Actualizamos los textos (título, descripción) de las imágenes viejas que SÍ se conservaron
       const keptIds = keptUrls.map(url => originalGalleryMapping[url]);
       if (keptIds.length > 0) {
-        await supabase.from("gallery_photos").update({
-          title: photoTitle,
-          description: photoDesc,
-        }).in("id", keptIds);
+        await supabase.from("gallery_photos").update({ title: photoTitle, description: photoDesc }).in("id", keptIds);
         successCount += keptIds.length;
       }
 
-      // 4. Subimos las fotos nuevas agregadas a este mismo álbum
       for (const uri of newUris) {
         const publicUrl = await uploadImageToStorage(uri);
         if (publicUrl) {
-          const { error } = await supabase.from("gallery_photos").insert({
-            title: photoTitle,
-            description: photoDesc,
-            image_url: publicUrl,
-          });
+          const { error } = await supabase.from("gallery_photos").insert({ title: photoTitle, description: photoDesc, image_url: publicUrl });
           if (!error) successCount++;
         }
       }
     } else {
-      // FLUJO DE ÁLBUM TOTALMENTE NUEVO
       for (const uri of galleryImages) {
         const publicUrl = await uploadImageToStorage(uri);
         if (publicUrl) {
-          const { error } = await supabase.from("gallery_photos").insert({
-            title: photoTitle,
-            description: photoDesc,
-            image_url: publicUrl,
-          });
+          const { error } = await supabase.from("gallery_photos").insert({ title: photoTitle, description: photoDesc, image_url: publicUrl });
           if (!error) successCount++;
         }
       }
@@ -338,13 +342,56 @@ export default function AdminScreen() {
 
     setUploading(false);
     if (successCount > 0) {
-      Alert.alert("Éxito", editingGalleryId ? "Galería actualizada correctamente." : `Se guardaron ${successCount} fotos en el nuevo álbum.`);
+      Alert.alert("Éxito", editingGalleryId ? "Galería actualizada." : `Se guardaron ${successCount} fotos.`);
       setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]); 
       setEditingGalleryId(null); setOriginalGalleryMapping({});
       loadAdminContent();
-      setActiveTab("dashboard");
     } else {
       Alert.alert("Error", "No se pudieron guardar las imágenes.");
+    }
+  };
+
+  const handleSaveSponsor = async () => {
+    if (!canPublishContent) return Alert.alert("Sin permisos", "Tu rol no puede administrar patrocinadores.");
+    if (!sponsorName || !sponsorContact) return Alert.alert("Campos vacíos", "El nombre y el contacto son obligatorios.");
+    
+    setUploading(true);
+    let publicUrl = sponsorLogo;
+
+    if (sponsorLogo && !sponsorLogo.startsWith("http")) {
+      const uploadedUrl = await uploadImageToStorage(sponsorLogo);
+      if (!uploadedUrl) {
+        setUploading(false);
+        return Alert.alert("Error", "No se pudo subir el logo del patrocinador.");
+      }
+      publicUrl = uploadedUrl;
+    }
+
+    const payload = {
+      name: sponsorName,
+      level: sponsorLevel,
+      description: sponsorDesc,
+      contact_name: sponsorContact,
+      logo_url: publicUrl,
+    };
+
+    let error;
+    if (editingSponsorId) {
+      const { error: err } = await supabase.from("sponsors").update(payload).eq("id", editingSponsorId);
+      error = err;
+    } else {
+      const { error: err } = await supabase.from("sponsors").insert(payload);
+      error = err;
+    }
+
+    setUploading(false);
+    if (!error) {
+      Alert.alert("Éxito", editingSponsorId ? "Patrocinador actualizado." : "Patrocinador registrado.");
+      setSponsorName(""); setSponsorDesc(""); setSponsorContact(""); setSponsorLogo(null); setEditingSponsorId(null);
+      loadAdminContent();
+    } else {
+      console.log(error);
+      Alert.alert("Error", "No se pudo guardar el patrocinador.");
     }
   };
 
@@ -354,7 +401,6 @@ export default function AdminScreen() {
     if (staffPassword.length < 6) return Alert.alert("Error", "Mínimo 6 caracteres en contraseña.");
 
     setUploading(true);
-
     try {
       const normalizedEmail = staffEmail.trim().toLowerCase();
       const isolatedSupabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -399,7 +445,7 @@ export default function AdminScreen() {
           <Feather name="home" size={22} color="#FFFFFF" />
         </Pressable>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Panel</Text>
+          <Text style={styles.headerTitle}>Panel de Control</Text>
           <Text style={styles.headerRole}>{ROLE_LABELS[currentRole] ?? "Usuario interno"}</Text>
         </View>
         <Pressable onPress={signOut} style={styles.backBtn}>
@@ -407,26 +453,29 @@ export default function AdminScreen() {
         </Pressable>
       </View>
 
-      {/* CUSTOM TABS */}
-      <View style={[styles.tabContainer, { borderBottomColor: colors.border }]}>
-        {availableTabs.map((tab) => {
-          const label: Record<AdminTab, string> = {
-            dashboard: "Resumen",
-            news: "Noticias",
-            photos: "Galería",
-            users: "Cuentas",
-          };
-          return (
-            <Pressable key={tab} style={[styles.tab, activeTab === tab && { borderBottomColor: colors.primary }]} onPress={() => setActiveTab(tab)}>
-              <Text style={[styles.tabText, { color: activeTab === tab ? colors.primary : colors.mutedForeground }]}>{label[tab]}</Text>
+      {/* CUSTOM TABS (SCROLLABLE) */}
+      <View style={{ borderBottomColor: colors.border, borderBottomWidth: 1 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabContainer}>
+          {availableTabs.map((tab) => {
+            const label: Record<AdminTab, string> = {
+              dashboard: "Resumen",
+              news: "Noticias",
+              photos: "Galería",
+              sponsors: "Patrocinios",
+              users: "Cuentas",
+            };
+            return (
+              <Pressable key={tab} style={[styles.tab, activeTab === tab && { borderBottomColor: colors.primary }]} onPress={() => setActiveTab(tab)}>
+                <Text style={[styles.tabText, { color: activeTab === tab ? colors.primary : colors.mutedForeground }]}>{label[tab]}</Text>
+              </Pressable>
+            );
+          })}
+          {availableTabs.length === 0 && (
+            <Pressable style={[styles.tab, { borderBottomColor: colors.primary }]} onPress={() => router.replace("/(tabs)")}>
+              <Text style={[styles.tabText, { color: colors.primary }]}>Inicio</Text>
             </Pressable>
-          );
-        })}
-        {availableTabs.length === 0 && (
-          <Pressable style={[styles.tab, { borderBottomColor: colors.primary }]} onPress={() => router.replace("/(tabs)")}>
-            <Text style={[styles.tabText, { color: colors.primary }]}>Inicio</Text>
-          </Pressable>
-        )}
+          )}
+        </ScrollView>
       </View>
 
       <KeyboardAwareScrollViewCompat contentContainerStyle={[styles.scroll, { paddingBottom: 40 + insets.bottom }]}>
@@ -515,7 +564,6 @@ export default function AdminScreen() {
               </Pressable>
             )}
 
-            {/* LISTA PARA SELECCIONAR Y EDITAR NOTICIAS */}
             <View style={styles.listContainer}>
               <Text style={[styles.inputLabel, { color: colors.foreground, marginTop: 10 }]}>Noticias Recientes</Text>
               {recentNews.map(item => (
@@ -531,7 +579,6 @@ export default function AdminScreen() {
                 </Pressable>
               ))}
             </View>
-
           </View>
         )}
 
@@ -566,7 +613,6 @@ export default function AdminScreen() {
                     </View>
                   ))}
                   
-                  {/* Siempre mostrar el botón para añadir más fotos al álbum */}
                   <Pressable style={[styles.addMoreBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => pickImage("gallery")}>
                     <Feather name="plus" size={24} color={colors.mutedForeground} />
                     <Text style={{ fontSize: 12, color: colors.mutedForeground, marginTop: 4 }}>Añadir más</Text>
@@ -590,7 +636,6 @@ export default function AdminScreen() {
               </Pressable>
             )}
 
-            {/* LISTA PARA SELECCIONAR Y EDITAR ÁLBUMES */}
             <View style={styles.listContainer}>
               <Text style={[styles.inputLabel, { color: colors.foreground, marginTop: 10 }]}>Álbumes Recientes</Text>
               {recentPhotos.map((item, i) => (
@@ -606,11 +651,129 @@ export default function AdminScreen() {
                 </Pressable>
               ))}
             </View>
-            
           </View>
         )}
 
-        {/* ================= TAB 4: CUENTAS ================= */}
+        {/* ================= TAB 4: PATROCINADORES ================= */}
+        {activeTab === "sponsors" && canPublishContent && (
+          <View style={styles.formSection}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+              {editingSponsorId ? "Editar Patrocinador" : "Nuevo Patrocinador"}
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Nivel de Patrocinio</Text>
+              <View style={styles.roleGrid}>
+                {SPONSOR_LEVELS.map((lvl) => (
+                  <Pressable 
+                    key={lvl} 
+                    style={[
+                      styles.roleChip, 
+                      { 
+                        backgroundColor: sponsorLevel === lvl ? colors.primary : colors.card, 
+                        borderColor: sponsorLevel === lvl ? colors.primary : colors.border 
+                      }
+                    ]} 
+                    onPress={() => setSponsorLevel(lvl)}
+                  >
+                    <Text style={[styles.roleChipText, { color: sponsorLevel === lvl ? "#FFFFFF" : colors.foreground }]}>{lvl}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Nombre Comercial *</Text>
+              <TextInput 
+                style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} 
+                placeholder="Ej. Empresa SA de CV" 
+                placeholderTextColor={colors.mutedForeground} 
+                value={sponsorName} 
+                onChangeText={setSponsorName} 
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Nombre del Contacto *</Text>
+              <TextInput 
+                style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} 
+                placeholder="Ej. Juan Pérez" 
+                placeholderTextColor={colors.mutedForeground} 
+                value={sponsorContact} 
+                onChangeText={setSponsorContact} 
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Leyenda o Descripción</Text>
+              <TextInput 
+                style={[styles.inputArea, { color: colors.foreground, borderColor: colors.border, height: 80 }]} 
+                placeholder="Aparecerá en la tarjeta pública..." 
+                placeholderTextColor={colors.mutedForeground} 
+                multiline 
+                textAlignVertical="top" 
+                value={sponsorDesc} 
+                onChangeText={setSponsorDesc} 
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Logo de la Empresa</Text>
+              <Pressable 
+                style={[styles.imageBtn, { borderColor: colors.border, backgroundColor: colors.card, height: 140 }]} 
+                onPress={() => pickImage("sponsor")}
+              >
+                {sponsorLogo ? (
+                  <Image source={{ uri: sponsorLogo }} style={styles.previewImage} resizeMode="contain" />
+                ) : (
+                  <>
+                    <Feather name="image" size={32} color={colors.mutedForeground} />
+                    <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>Tocar para subir logo</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+
+            <Pressable 
+              style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} 
+              onPress={handleSaveSponsor} 
+              disabled={uploading}
+            >
+              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{editingSponsorId ? "Actualizar" : "Guardar Patrocinador"}</Text>}
+            </Pressable>
+
+            {editingSponsorId && (
+              <Pressable style={{ alignItems: "center", marginTop: 10 }} onPress={() => { setEditingSponsorId(null); setSponsorName(""); setSponsorDesc(""); setSponsorContact(""); setSponsorLogo(null); }}>
+                <Text style={{ color: colors.primary }}>Cancelar edición</Text>
+              </Pressable>
+            )}
+
+            <View style={styles.listContainer}>
+              <Text style={[styles.inputLabel, { color: colors.foreground, marginTop: 10 }]}>Patrocinadores Recientes</Text>
+              {recentSponsors.map(item => (
+                <Pressable key={item.id} style={[styles.listItem, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => selectSponsorForEdit(item)}>
+                  {item.logo_url ? (
+                    <Image source={{ uri: item.logo_url }} style={styles.listImg} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.listImg, { alignItems: "center", justifyContent: "center", backgroundColor: colors.primary + "20" }]}>
+                      <Feather name="award" size={20} color={colors.primary} />
+                    </View>
+                  )}
+                  <View style={styles.listInfo}>
+                    <Text style={[styles.listTitle, { color: colors.foreground }]} numberOfLines={1}>{item.name}</Text>
+                    <Text style={[styles.listDate, { color: colors.primary }]}>{item.level}</Text>
+                  </View>
+                  <View style={[styles.editIconBtn, { backgroundColor: colors.primary + "15" }]}>
+                    <Feather name="edit-2" size={16} color={colors.primary} />
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+
+          </View>
+        )}
+
+        {/* ================= TAB 5: CUENTAS ================= */}
         {activeTab === "users" && canManageUsers && (
           <View style={styles.formSection}>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Crear cuenta interna</Text>
@@ -683,9 +846,12 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1, alignItems: "center" },
   headerTitle: { color: "#FFFFFF", fontSize: 18, fontFamily: "Inter_700Bold", textAlign: "center" },
   headerRole: { color: "rgba(255,255,255,0.78)", fontSize: 12, fontFamily: "Inter_500Medium", marginTop: 2 },
-  tabContainer: { flexDirection: "row", borderWidth: 0, borderBottomWidth: 1 },
-  tab: { flex: 1, paddingVertical: 14, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
+  
+  // Custom Tabs Horizontal
+  tabContainer: { flexDirection: "row", paddingHorizontal: 10 },
+  tab: { paddingHorizontal: 16, paddingVertical: 14, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
   tabText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  
   scroll: { paddingHorizontal: 20, paddingTop: 20, gap: 24 },
   section: { gap: 14 },
   sectionTitle: { fontSize: 18, fontFamily: "Inter_700Bold" },

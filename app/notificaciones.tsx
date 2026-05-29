@@ -36,16 +36,14 @@ export default function NotificacionesScreen() {
 
     const loadNotifications = async () => {
       try {
-        let query = supabase
+        setLoading(true);
+        // Eliminamos la búsqueda por user_id porque las alertas son globales
+        const { data, error } = await supabase
           .from("notifications")
           .select("*")
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false })
+          .limit(50); // Límite de seguridad
 
-        if (profile?.id) {
-          query = query.or(`user_id.eq.${profile.id},user_id.is.null`);
-        }
-
-        const { data, error } = await query;
         if (error) throw error;
         if (mounted) setNotifications((data || []).map(mapNotification));
       } catch (error) {

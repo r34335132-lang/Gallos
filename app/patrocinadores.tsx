@@ -42,7 +42,17 @@ export default function PatrocinadoresScreen() {
           .select("*");
 
         if (error) throw error;
-        if (mounted) setSponsors((data || []).map(mapSponsor));
+        
+        if (mounted && data) {
+          // Mapeamos y ordenamos: Oro primero, luego Plata, luego Bronce, etc.
+          const sorted = data.map(mapSponsor).sort((a, b) => {
+            const rank = { oro: 1, plata: 2, bronce: 3 };
+            const rankA = rank[a.level.toLowerCase() as keyof typeof rank] || 4;
+            const rankB = rank[b.level.toLowerCase() as keyof typeof rank] || 4;
+            return rankA - rankB;
+          });
+          setSponsors(sorted);
+        }
       } catch (error) {
         console.error("Error al cargar patrocinadores:", error);
       } finally {
@@ -94,6 +104,16 @@ export default function PatrocinadoresScreen() {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <>
+            {/* Aviso Legal para pasar filtros de Apple y Google (App Store / Play Store) */}
+            <View style={[styles.disclaimerBox, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '30' }]}>
+              <Feather name="heart" size={24} color={colors.primary} style={{ marginBottom: 8 }} />
+              <Text style={[styles.disclaimerText, { color: colors.foreground }]}>
+                Agradecemos profundamente a nuestros contribuyentes y patrocinadores por hacer posible la labor de la Fundación Gallos Smiling. Este espacio es un reconocimiento de carácter puramente informativo y de agradecimiento a su generosidad. 
+                {"\n\n"}
+                <Text style={{ fontFamily: 'Inter_700Bold' }}>Nota:</Text> No se realizan transacciones, donaciones ni pagos a través de esta aplicación.
+              </Text>
+            </View>
+
             {/* Impact summary */}
             <View style={[styles.impactCard, { backgroundColor: colors.primary }]}>
               <View style={styles.impactStat}>
@@ -181,6 +201,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   list: { paddingHorizontal: 20, paddingTop: 16, gap: 10 },
+  disclaimerBox: { padding: 16, borderRadius: 12, borderWidth: 1, marginBottom: 16, alignItems: 'center' },
+  disclaimerText: { fontSize: 13, fontFamily: 'Inter_400Regular', lineHeight: 20, textAlign: 'center' },
   impactCard: {
     flexDirection: "row",
     borderRadius: 16,
@@ -196,7 +218,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     lineHeight: 20,
-    marginBottom: 4,
+    marginBottom: 12, // Ajustado el margen
   },
   filterList: { gap: 8, marginBottom: 8 },
   filterChip: {
@@ -206,7 +228,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   filterChipText: { fontSize: 12, fontFamily: "Inter_500Medium" },
-  count: { fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 4 },
+  count: { fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 8 },
   empty: { alignItems: "center", paddingVertical: 60, gap: 12 },
   emptyText: { fontSize: 14, fontFamily: "Inter_400Regular" },
 });

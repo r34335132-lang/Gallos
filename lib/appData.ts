@@ -75,6 +75,7 @@ export interface Sponsor {
   status: "activo" | "inactivo" | string;
   beneficiaries: number;
   startDate: string;
+  logo?: string | null;
 }
 
 export type BeneficiaryStatus =
@@ -203,7 +204,6 @@ export const SUPPORT_TYPES = [
   "Apoyo educativo",
 ];
 
-// AQUÍ ESTÁN LOS CAMBIOS PRINCIPALES
 export const REQUIRED_DOC_TYPES = [
   "Firma carta responsiva",
   "Carta de uso de imagen",
@@ -275,6 +275,7 @@ export function mapSponsor(row: any): Sponsor {
     status: row.status ?? "activo",
     beneficiaries: Number(row.beneficiaries ?? row.beneficiary_count ?? 0),
     startDate: row.startDate ?? row.start_date ?? formatDisplayDate(row.created_at),
+    logo: row.logo_url ?? row.logo ?? null,
   };
 }
 

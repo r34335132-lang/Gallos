@@ -15,13 +15,17 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
+import { createClient } from "@supabase/supabase-js";
 
 import { StatsCard } from "@/components/StatsCard";
+import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
-import { supabase } from "@/lib/supabase";
+import { STAFF_ROLES, type UserRole } from "@/lib/appData";
+import { supabase, supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 
 const ADMIN_SECTIONS = [
+  { icon: "user-plus" as const, label: "Registrar beneficiario", desc: "Capturar una nueva solicitud en base de datos", route: "/(tabs)/registrar", color: "#059669" },
   { icon: "folder" as const, label: "Expedientes", desc: "Gestionar expedientes y beneficiarios", route: "/(tabs)/expedientes", color: "#1A4FA8" },
   { icon: "file-text" as const, label: "Noticias Publicadas", desc: "Ver todas las noticias", route: "/(tabs)/noticias", color: "#059669" },
   { icon: "image" as const, label: "Galería Pública", desc: "Ver fotos publicadas", route: "/galeria", color: "#EC4899" },
@@ -29,11 +33,38 @@ const ADMIN_SECTIONS = [
   { icon: "bar-chart-2" as const, label: "Estadísticas", desc: "Ver reportes y métricas", route: "/estadisticas", color: "#7C3AED" },
 ];
 
-type AdminTab = "dashboard" | "news" | "photos";
+type AdminTab = "dashboard" | "news" | "photos" | "users";
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Administrador",
+  capturista: "Capturista",
+  validador: "Validador",
+  comunicacion: "Comunicación",
+};
+
+const TAB_PERMISSIONS: Record<AdminTab, string[]> = {
+  dashboard: ["admin", "capturista", "validador", "comunicacion"],
+  news: ["admin", "comunicacion"],
+  photos: ["admin", "comunicacion"],
+  users: ["admin"],
+};
+
+const SECTION_PERMISSIONS: Record<string, string[]> = {
+  "/(tabs)/registrar": ["admin", "capturista"],
+  "/(tabs)/expedientes": ["admin", "capturista", "validador"],
+  "/(tabs)/noticias": ["admin", "comunicacion"],
+  "/galeria": ["admin", "comunicacion"],
+  "/patrocinadores": ["admin"],
+  "/estadisticas": ["admin"],
+};
 
 export default function AdminScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { profile, refreshProfile, signOut } = useAuth();
+  const currentRole = profile?.role || "";
+  const canManageUsers = profile?.role === "admin";
+  const canPublishContent = currentRole === "admin" || currentRole === "comunicacion";
   
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [uploading, setUploading] = useState(false);
@@ -54,9 +85,28 @@ export default function AdminScreen() {
   const [photoDesc, setPhotoDesc] = useState("");
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
 
+  const [staffName, setStaffName] = useState("");
+  const [staffEmail, setStaffEmail] = useState("");
+  const [staffPhone, setStaffPhone] = useState("");
+  const [staffPassword, setStaffPassword] = useState("");
+  const [staffRole, setStaffRole] = useState<Exclude<UserRole, "tutor" | "patrocinador" | "visitante">>("comunicacion");
+
+  const availableTabs = (Object.keys(TAB_PERMISSIONS) as AdminTab[]).filter((tab) =>
+    TAB_PERMISSIONS[tab].includes(currentRole)
+  );
+  const visibleSections = ADMIN_SECTIONS.filter((item) =>
+    (SECTION_PERMISSIONS[item.route] || ["admin"]).includes(currentRole)
+  );
+
   useEffect(() => {
     loadStats();
   }, []);
+
+  useEffect(() => {
+    if (!availableTabs.includes(activeTab)) {
+      setActiveTab("dashboard");
+    }
+  }, [activeTab, availableTabs]);
 
   const loadStats = async () => {
     const { data, error } = await supabase.from("app_stats").select("*").maybeSingle();
@@ -119,6 +169,10 @@ export default function AdminScreen() {
   };
 
   const handlePublishNews = async () => {
+    if (!canPublishContent) {
+      Alert.alert("Sin permisos", "Tu rol no puede publicar noticias.");
+      return;
+    }
     if (!newsTitle || !newsContent) return Alert.alert("Campos vacíos", "Completa título y contenido.");
     setUploading(true);
     let publicUrl = null;
@@ -152,6 +206,10 @@ export default function AdminScreen() {
   };
 
   const handleUploadPhoto = async () => {
+    if (!canPublishContent) {
+      Alert.alert("Sin permisos", "Tu rol no puede subir fotos.");
+      return;
+    }
     if (galleryImages.length === 0) return Alert.alert("Faltan Imágenes", "Selecciona al menos una fotografía.");
     setUploading(true);
 
@@ -185,28 +243,113 @@ export default function AdminScreen() {
     }
   };
 
+  const handleCreateStaffAccount = async () => {
+    if (!canManageUsers) {
+      Alert.alert("Sin permisos", "Solo una cuenta administradora puede crear usuarios internos.");
+      return;
+    }
+
+    if (!staffName || !staffEmail || !staffPassword) {
+      Alert.alert("Campos incompletos", "Agrega nombre, correo y contraseña temporal.");
+      return;
+    }
+
+    if (staffPassword.length < 6) {
+      Alert.alert("Contraseña corta", "La contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      const normalizedEmail = staffEmail.trim().toLowerCase();
+      const isolatedSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+          detectSessionInUrl: false,
+        },
+      });
+
+      const { data: authData, error: authError } = await isolatedSupabase.auth.signUp({
+        email: normalizedEmail,
+        password: staffPassword,
+        options: {
+          data: {
+            name: staffName.trim(),
+            phone: staffPhone.trim() || null,
+            role: staffRole,
+          },
+        },
+      });
+
+      if (authError) throw authError;
+
+      if (!authData.user?.id) {
+        throw new Error("Supabase no regresó el ID del nuevo usuario.");
+      }
+
+      const { error: profileError } = await supabase.from("users").upsert({
+        id: authData.user.id,
+        name: staffName.trim(),
+        email: normalizedEmail,
+        phone: staffPhone.trim() || null,
+        role: staffRole,
+      });
+
+      if (profileError) throw profileError;
+
+      await refreshProfile();
+      Alert.alert("Cuenta creada", `La cuenta de ${staffName.trim()} quedó registrada como ${STAFF_ROLES.find((role) => role.value === staffRole)?.label}.`);
+      setStaffName("");
+      setStaffEmail("");
+      setStaffPhone("");
+      setStaffPassword("");
+      setStaffRole("comunicacion");
+      setActiveTab("dashboard");
+    } catch (error: any) {
+      Alert.alert("No se pudo crear", error.message || "Revisa permisos de Auth/RLS e intenta de nuevo.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* HEADER */}
       <View style={[styles.header, { backgroundColor: colors.primary, paddingTop: insets.top + (Platform.OS === "web" ? 67 : 16) }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={22} color="#FFFFFF" />
+        <Pressable onPress={() => router.replace("/(tabs)")} style={styles.backBtn}>
+          <Feather name="home" size={22} color="#FFFFFF" />
         </Pressable>
-        <Text style={styles.headerTitle}>Panel administrador</Text>
-        <View style={{ width: 22 }} />
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>Panel</Text>
+          <Text style={styles.headerRole}>{ROLE_LABELS[currentRole] ?? "Usuario interno"}</Text>
+        </View>
+        <Pressable onPress={signOut} style={styles.backBtn}>
+          <Feather name="log-out" size={22} color="#FFFFFF" />
+        </Pressable>
       </View>
 
       {/* CUSTOM TABS */}
       <View style={[styles.tabContainer, { borderBottomColor: colors.border }]}>
-        <Pressable style={[styles.tab, activeTab === "dashboard" && { borderBottomColor: colors.primary }]} onPress={() => setActiveTab("dashboard")}>
-          <Text style={[styles.tabText, { color: activeTab === "dashboard" ? colors.primary : colors.mutedForeground }]}>Resumen</Text>
-        </Pressable>
-        <Pressable style={[styles.tab, activeTab === "news" && { borderBottomColor: colors.primary }]} onPress={() => setActiveTab("news")}>
-          <Text style={[styles.tabText, { color: activeTab === "news" ? colors.primary : colors.mutedForeground }]}>Redactar</Text>
-        </Pressable>
-        <Pressable style={[styles.tab, activeTab === "photos" && { borderBottomColor: colors.primary }]} onPress={() => setActiveTab("photos")}>
-          <Text style={[styles.tabText, { color: activeTab === "photos" ? colors.primary : colors.mutedForeground }]}>Subir Fotos</Text>
-        </Pressable>
+        {availableTabs.map((tab) => {
+          const label: Record<AdminTab, string> = {
+            dashboard: "Resumen",
+            news: "Redactar",
+            photos: "Subir Fotos",
+            users: "Cuentas",
+          };
+          return (
+            <Pressable key={tab} style={[styles.tab, activeTab === tab && { borderBottomColor: colors.primary }]} onPress={() => setActiveTab(tab)}>
+              <Text style={[styles.tabText, { color: activeTab === tab ? colors.primary : colors.mutedForeground }]}>{label[tab]}</Text>
+            </Pressable>
+          );
+        })}
+        {availableTabs.length === 0 && (
+          <Pressable style={[styles.tab, { borderBottomColor: colors.primary }]} onPress={() => router.replace("/(tabs)")}>
+            <Text style={[styles.tabText, { color: colors.primary }]}>Inicio</Text>
+          </Pressable>
+        )}
       </View>
 
       <KeyboardAwareScrollViewCompat contentContainerStyle={[styles.scroll, { paddingBottom: 40 + insets.bottom }]}>
@@ -228,7 +371,7 @@ export default function AdminScreen() {
 
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Gestión Rápida</Text>
-              {ADMIN_SECTIONS.map((item) => (
+              {visibleSections.map((item) => (
                 <Pressable
                   key={item.label}
                   style={({ pressed }) => [
@@ -252,7 +395,7 @@ export default function AdminScreen() {
         )}
 
         {/* ================= TAB 2: NOTICIAS ================= */}
-        {activeTab === "news" && (
+        {activeTab === "news" && canPublishContent && (
           <View style={styles.formSection}>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Publicar Nueva Noticia</Text>
             
@@ -290,7 +433,7 @@ export default function AdminScreen() {
         )}
 
         {/* ================= TAB 3: FOTOS ================= */}
-        {activeTab === "photos" && (
+        {activeTab === "photos" && canPublishContent && (
           <View style={styles.formSection}>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Añadir Fotos a Galería</Text>
             
@@ -324,7 +467,7 @@ export default function AdminScreen() {
                 </ScrollView>
               ) : (
                 <Pressable style={[styles.imageBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => pickImage("gallery")}>
-                  <Feather name="images" size={32} color={colors.mutedForeground} />
+                  <Feather name="image" size={32} color={colors.mutedForeground} />
                   <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>Tocar para seleccionar varias fotos</Text>
                 </Pressable>
               )}
@@ -332,6 +475,67 @@ export default function AdminScreen() {
 
             <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} onPress={handleUploadPhoto} disabled={uploading}>
               {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Subir {galleryImages.length > 0 ? galleryImages.length : ""} a la Galería</Text>}
+            </Pressable>
+          </View>
+        )}
+
+        {/* ================= TAB 4: CUENTAS ================= */}
+        {activeTab === "users" && canManageUsers && (
+          <View style={styles.formSection}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Crear cuenta interna</Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Rol</Text>
+              <View style={styles.roleGrid}>
+                {STAFF_ROLES.map((role) => (
+                  <Pressable
+                    key={role.value}
+                    style={[
+                      styles.roleChip,
+                      {
+                        backgroundColor: staffRole === role.value ? colors.primary : colors.card,
+                        borderColor: staffRole === role.value ? colors.primary : colors.border,
+                      },
+                    ]}
+                    onPress={() => setStaffRole(role.value)}
+                  >
+                    <Text style={[styles.roleChipText, { color: staffRole === role.value ? "#FFFFFF" : colors.foreground }]}>
+                      {role.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Nombre completo</Text>
+              <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} placeholder="Nombre de la persona" placeholderTextColor={colors.mutedForeground} value={staffName} onChangeText={setStaffName} />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Correo</Text>
+              <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} placeholder="comunicacion@correo.com" placeholderTextColor={colors.mutedForeground} keyboardType="email-address" autoCapitalize="none" value={staffEmail} onChangeText={setStaffEmail} />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Teléfono</Text>
+              <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} placeholder="Opcional" placeholderTextColor={colors.mutedForeground} keyboardType="phone-pad" value={staffPhone} onChangeText={setStaffPhone} />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Contraseña temporal</Text>
+              <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} placeholder="Mínimo 6 caracteres" placeholderTextColor={colors.mutedForeground} secureTextEntry value={staffPassword} onChangeText={setStaffPassword} />
+            </View>
+
+            <View style={[styles.infoBox, { backgroundColor: colors.primary + "10", borderColor: colors.primary + "25" }]}>
+              <Feather name="info" size={16} color={colors.primary} />
+              <Text style={[styles.infoBoxText, { color: colors.foreground }]}>
+                La opción principal es Comunicación. También puedes crear capturistas, validadores o administradores si tu política de Supabase lo permite.
+              </Text>
+            </View>
+
+            <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} onPress={handleCreateStaffAccount} disabled={uploading}>
+              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Crear cuenta</Text>}
             </Pressable>
           </View>
         )}
@@ -345,7 +549,9 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 16 },
   backBtn: { padding: 4 },
-  headerTitle: { color: "#FFFFFF", fontSize: 18, fontFamily: "Inter_700Bold", flex: 1, textAlign: "center" },
+  headerCenter: { flex: 1, alignItems: "center" },
+  headerTitle: { color: "#FFFFFF", fontSize: 18, fontFamily: "Inter_700Bold", textAlign: "center" },
+  headerRole: { color: "rgba(255,255,255,0.78)", fontSize: 12, fontFamily: "Inter_500Medium", marginTop: 2 },
   tabContainer: { flexDirection: "row", borderWidth: 0, borderBottomWidth: 1 },
   tab: { flex: 1, paddingVertical: 14, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
   tabText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
@@ -367,6 +573,11 @@ const styles = StyleSheet.create({
   inputLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, height: 50, fontSize: 15, fontFamily: "Inter_400Regular" },
   inputArea: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingTop: 14, height: 120, fontSize: 15, fontFamily: "Inter_400Regular" },
+  roleGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  roleChip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 },
+  roleChipText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  infoBox: { flexDirection: "row", gap: 10, borderWidth: 1, borderRadius: 12, padding: 12, alignItems: "flex-start" },
+  infoBoxText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18 },
   imageBtn: { height: 180, borderWidth: 1, borderStyle: "dashed", borderRadius: 12, justifyContent: "center", alignItems: "center", overflow: "hidden" },
   previewImage: { width: "100%", height: "100%", resizeMode: "cover" },
   submitBtn: { height: 54, borderRadius: 14, justifyContent: "center", alignItems: "center", marginTop: 8 },

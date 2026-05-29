@@ -33,6 +33,7 @@ function RootLayoutNav() {
       <Stack.Screen name="galeria" />
       
       <Stack.Screen name="noticia/[id]" />
+      <Stack.Screen name="consentimiento/[type]" />
       <Stack.Screen name="expediente/[id]" />
       <Stack.Screen name="documentos" />
       <Stack.Screen name="admin" />

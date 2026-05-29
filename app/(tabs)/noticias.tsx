@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Platform,
   Pressable,
@@ -10,14 +11,12 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NewsCard } from "@/components/NewsCard";
-import { COMMUNICATIONS, NEWS } from "@/data/mock";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useColors } from "@/hooks/useColors";
-import { router } from "expo-router";
+import { mapCommunication, mapNews, type Communication, type NewsArticle } from "@/lib/appData";
+import { supabase } from "@/lib/supabase";
 
 type Tab = "noticias" | "comunicados";
-
-const CATEGORIES = ["Todas", "Fundación", "Club Gallos Blancos", "Beneficiarios", "Eventos", "Patrocinadores", "Historias de impacto"];
 
 export default function NoticiasScreen() {
   const colors = useColors();
@@ -25,10 +24,41 @@ export default function NoticiasScreen() {
   const tabBarHeight = Platform.OS === "web" ? 84 : 60;
   const [activeTab, setActiveTab] = useState<Tab>("noticias");
   const [activeCategory, setActiveCategory] = useState("Todas");
+  const [news, setNews] = useState<NewsArticle[]>([]);
+  const [communications, setCommunications] = useState<Communication[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadContent = async () => {
+      try {
+        const [newsRes, commsRes] = await Promise.all([
+          supabase.from("news").select("*").order("created_at", { ascending: false }),
+          supabase.from("communications").select("*").order("created_at", { ascending: false }),
+        ]);
+
+        if (!mounted) return;
+        setNews((newsRes.data || []).map(mapNews));
+        setCommunications((commsRes.data || []).map(mapCommunication));
+      } catch (error) {
+        console.error("Error al cargar noticias:", error);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadContent();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const filteredNews = activeCategory === "Todas"
-    ? NEWS
-    : NEWS.filter((n) => n.category === activeCategory);
+    ? news
+    : news.filter((n) => n.category === activeCategory);
+  const categories = ["Todas", ...Array.from(new Set(news.map((item) => item.category).filter(Boolean)))];
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -66,7 +96,12 @@ export default function NoticiasScreen() {
         </View>
       </View>
 
-      {activeTab === "noticias" ? (
+      {loading ? (
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ color: colors.mutedForeground }}>Cargando contenido...</Text>
+        </View>
+      ) : activeTab === "noticias" ? (
         <FlatList
           data={filteredNews}
           keyExtractor={(item) => item.id}
@@ -77,7 +112,7 @@ export default function NoticiasScreen() {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             <FlatList
-              data={CATEGORIES}
+              data={categories}
               keyExtractor={(item) => item}
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -117,7 +152,7 @@ export default function NoticiasScreen() {
         />
       ) : (
         <FlatList
-          data={COMMUNICATIONS}
+          data={communications}
           keyExtractor={(item) => item.id}
           contentContainerStyle={[
             styles.list,
@@ -150,6 +185,12 @@ export default function NoticiasScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  loading: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
   header: {
     paddingHorizontal: 20,
     paddingBottom: 0,

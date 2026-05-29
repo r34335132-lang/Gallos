@@ -2,15 +2,16 @@ import { router } from "expo-router";
 import React from "react";
 import {
   Image,
+  ImageSourcePropType,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import { useColors } from "@/hooks/useColors";
-import type { NewsArticle } from "@/data/mock";
+import type { NewsArticle } from "@/lib/appData";
 
-const IMAGES: Record<string, ReturnType<typeof require>> = {
+const IMAGES: Record<string, ImageSourcePropType> = {
   news_1: require("@/assets/images/news_1.png"),
   news_2: require("@/assets/images/news_2.png"),
   hero_banner: require("@/assets/images/hero_banner.png"),
@@ -35,7 +36,10 @@ interface Props {
 export function NewsCard({ article, featured }: Props) {
   const colors = useColors();
   const catColor = CATEGORY_COLORS[article.category] ?? colors.primary;
-  const imgSrc = IMAGES[article.image] ?? IMAGES.hero_banner;
+  const imgSrc: ImageSourcePropType =
+    article.image && article.image.startsWith("http")
+      ? { uri: article.image }
+      : IMAGES[article.image ?? ""] ?? IMAGES.hero_banner;
 
   return (
     <Pressable

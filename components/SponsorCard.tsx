@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
-import type { Sponsor } from "@/data/mock";
+import type { Sponsor } from "@/lib/appData";
 
 const LEVEL_COLORS: Record<string, { color: string; bg: string }> = {
   Oro: { color: "#92400E", bg: "#FEF3C7" },

@@ -13,11 +13,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { supabase } from "@/lib/supabase";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-import { useAuth } from "@/context/AuthContext"; // Importamos el contexto
 
 export default function Login() {
   const colors = useColors();
-  const { signInAsGuest } = useAuth(); // Extraemos la función para invitados
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -105,15 +103,6 @@ export default function Login() {
             {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Entrar</Text>}
           </Pressable>
 
-          {/* NUEVO BOTÓN: Entrar como visitante */}
-          <Pressable
-            style={[styles.guestButton, { borderColor: colors.primary }]}
-            onPress={signInAsGuest}
-            disabled={loading}
-          >
-            <Text style={[styles.buttonText, { color: colors.primary }]}>Entrar como visitante</Text>
-          </Pressable>
-
           <View style={styles.footerLink}>
             <Text style={{ color: colors.mutedForeground }}>¿No tienes una cuenta? </Text>
             <Link href="/register" asChild>
@@ -138,7 +127,6 @@ const styles = StyleSheet.create({
   label: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   input: { height: 50, borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, fontSize: 16 },
   button: { height: 52, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 12 },
-  guestButton: { height: 52, borderRadius: 12, justifyContent: "center", alignItems: "center", borderWidth: 1, marginTop: 4 },
   buttonText: { color: "#FFF", fontSize: 16, fontFamily: "Inter_700Bold" },
   footerLink: { flexDirection: "row", justifyContent: "center", marginTop: 16 },
   linkText: { fontFamily: "Inter_700Bold" },

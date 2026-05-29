@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   Image,
   Platform,
@@ -15,8 +15,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NewsCard } from "@/components/NewsCard";
 import { StatsCard } from "@/components/StatsCard";
 import { useAuth } from "@/context/AuthContext";
-import { NEWS, STATS } from "@/data/mock";
 import { useColors } from "@/hooks/useColors";
+import {
+  deriveStats,
+  EMPTY_STATS,
+  mapBeneficiary,
+  mapDocument,
+  mapNews,
+  mapSponsor,
+  mapStats,
+  type NewsArticle,
+  type Stats,
+} from "@/lib/appData";
+import { supabase } from "@/lib/supabase";
 
 const LOGO = require("@/assets/images/logo.png");
 
@@ -34,6 +45,50 @@ export default function HomeScreen() {
   const { user, isAdmin } = useAuth();
   const insets = useSafeAreaInsets();
   const tabBarHeight = Platform.OS === "web" ? 84 : 60;
+  const [stats, setStats] = useState<Stats>(EMPTY_STATS);
+  const [featuredNews, setFeaturedNews] = useState<NewsArticle | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadHomeData = async () => {
+      try {
+        const [{ data: statsRow }, { data: newsRow }] = await Promise.all([
+          supabase.from("app_stats").select("*").maybeSingle(),
+          supabase.from("news").select("*").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        ]);
+
+        if (!mounted) return;
+        if (statsRow) setStats(mapStats(statsRow));
+        if (newsRow) setFeaturedNews(mapNews(newsRow));
+
+        if (!statsRow) {
+          const [beneficiariesRes, documentsRes, sponsorsRes] = await Promise.all([
+            supabase.from("beneficiaries").select("*"),
+            supabase.from("documents").select("*"),
+            supabase.from("sponsors").select("*"),
+          ]);
+
+          if (!mounted) return;
+          setStats(
+            deriveStats(
+              (beneficiariesRes.data || []).map(mapBeneficiary),
+              (documentsRes.data || []).map(mapDocument),
+              (sponsorsRes.data || []).map(mapSponsor)
+            )
+          );
+        }
+      } catch (error) {
+        console.error("Error al cargar inicio:", error);
+      }
+    };
+
+    loadHomeData();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -117,13 +172,13 @@ export default function HomeScreen() {
         <View style={styles.statsGrid}>
           <StatsCard
             label="Beneficiarios apoyados"
-            value={STATS.supportDelivered}
+            value={stats.supportDelivered}
             icon="users"
             color={colors.primary}
           />
           <StatsCard
             label="Familias acompañadas"
-            value={STATS.familiesHelped}
+            value={stats.familiesHelped}
             icon="heart"
             color="#059669"
           />
@@ -131,13 +186,13 @@ export default function HomeScreen() {
         <View style={styles.statsGrid}>
           <StatsCard
             label="Patrocinadores activos"
-            value={STATS.activeSponsors}
+            value={stats.activeSponsors}
             icon="award"
             color="#D97706"
           />
           <StatsCard
             label="Apoyos entregados"
-            value={STATS.approvedRequests}
+            value={stats.approvedRequests}
             icon="check-circle"
             color="#7C3AED"
           />
@@ -187,7 +242,16 @@ export default function HomeScreen() {
             <Text style={[styles.seeAll, { color: colors.primaryLight }]}>Ver todas</Text>
           </Pressable>
         </View>
-        <NewsCard article={NEWS[0]} featured />
+        {featuredNews ? (
+          <NewsCard article={featuredNews} featured />
+        ) : (
+          <View style={[styles.emptyNews, { borderColor: colors.border, backgroundColor: colors.muted }]}>
+            <Feather name="file-text" size={22} color={colors.mutedForeground} />
+            <Text style={[styles.emptyNewsText, { color: colors.mutedForeground }]}>
+              Aún no hay noticias publicadas.
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Tagline */}
@@ -362,5 +426,19 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.75)",
     fontSize: 13,
     fontFamily: "Inter_400Regular",
+  },
+  emptyNews: {
+    minHeight: 110,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    padding: 16,
+  },
+  emptyNewsText: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    textAlign: "center",
   },
 });

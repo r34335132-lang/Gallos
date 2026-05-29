@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { isAdminRole } from "@/lib/appData";
 
 export default function Index() {
   const { user, loading } = useAuth();
@@ -17,6 +18,8 @@ export default function Index() {
         router.replace("/onboarding");
       } else if (!user) {
         router.replace("/login");
+      } else if (isAdminRole(user.role)) {
+        router.replace("/admin");
       } else {
         router.replace("/(tabs)");
       }

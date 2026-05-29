@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Platform,
   Pressable,
@@ -11,8 +12,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SponsorCard } from "@/components/SponsorCard";
-import { SPONSORS, type SponsorLevel } from "@/data/mock";
 import { useColors } from "@/hooks/useColors";
+import { mapSponsor, type Sponsor, type SponsorLevel } from "@/lib/appData";
+import { supabase } from "@/lib/supabase";
 
 const LEVEL_FILTERS: { value: SponsorLevel | "todos"; label: string }[] = [
   { value: "todos", label: "Todos" },
@@ -27,12 +29,39 @@ export default function PatrocinadoresScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [levelFilter, setLevelFilter] = useState<SponsorLevel | "todos">("todos");
+  const [sponsors, setSponsors] = useState<Sponsor[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadSponsors = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("sponsors")
+          .select("*");
+
+        if (error) throw error;
+        if (mounted) setSponsors((data || []).map(mapSponsor));
+      } catch (error) {
+        console.error("Error al cargar patrocinadores:", error);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadSponsors();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const filtered = levelFilter === "todos"
-    ? SPONSORS
-    : SPONSORS.filter((s) => s.level === levelFilter);
+    ? sponsors
+    : sponsors.filter((s) => s.level === levelFilter);
 
-  const totalBeneficiaries = SPONSORS.reduce((sum, s) => sum + s.beneficiaries, 0);
+  const totalBeneficiaries = sponsors.reduce((sum, s) => sum + s.beneficiaries, 0);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -52,6 +81,12 @@ export default function PatrocinadoresScreen() {
         <View style={{ width: 22 }} />
       </View>
 
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ color: colors.mutedForeground, marginTop: 10 }}>Cargando patrocinadores...</Text>
+        </View>
+      ) : (
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
@@ -62,7 +97,7 @@ export default function PatrocinadoresScreen() {
             {/* Impact summary */}
             <View style={[styles.impactCard, { backgroundColor: colors.primary }]}>
               <View style={styles.impactStat}>
-                <Text style={styles.impactValue}>{SPONSORS.filter((s) => s.status === "activo").length}</Text>
+                <Text style={styles.impactValue}>{sponsors.filter((s) => s.status === "activo").length}</Text>
                 <Text style={styles.impactLabel}>Patrocinadores activos</Text>
               </View>
               <View style={[styles.impactDivider, { backgroundColor: "rgba(255,255,255,0.2)" }]} />
@@ -122,12 +157,14 @@ export default function PatrocinadoresScreen() {
           </View>
         }
       />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: {
     flexDirection: "row",
     alignItems: "center",

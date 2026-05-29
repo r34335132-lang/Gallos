@@ -141,7 +141,7 @@ export default function Register() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { padding: 24, justifyContent: "center", flexGrow: 1 },
-  header: { marginBottom: 32, itemsAlign: "center" },
+  header: { marginBottom: 32, alignItems: "center" },
   title: { fontSize: 28, fontFamily: "Inter_700Bold", textAlign: "center" },
   subtitle: { fontSize: 16, textAlign: "center", marginTop: 8 },
   form: { gap: 16 },

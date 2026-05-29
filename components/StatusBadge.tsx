@@ -1,7 +1,6 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { useColors } from "@/hooks/useColors";
-import type { BeneficiaryStatus, CommPriority, DocStatus } from "@/data/mock";
+import type { BeneficiaryStatus, CommPriority, DocStatus } from "@/lib/appData";
 
 type AnyStatus = BeneficiaryStatus | CommPriority | DocStatus | "activo" | "inactivo" | string;
 
@@ -18,6 +17,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
   activo: { label: "Activo", color: "#065F46", bg: "#D1FAE5" },
   inactivo: { label: "Inactivo", color: "#374151", bg: "#F3F4F6" },
   validado: { label: "Validado", color: "#065F46", bg: "#D1FAE5" },
+  faltante: { label: "Faltante", color: "#374151", bg: "#F3F4F6" },
   requiere_correccion: { label: "Correccion", color: "#92400E", bg: "#FEF3C7" },
   importante: { label: "Importante", color: "#1E40AF", bg: "#DBEAFE" },
   informativo: { label: "Informativo", color: "#065F46", bg: "#D1FAE5" },

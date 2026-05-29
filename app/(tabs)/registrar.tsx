@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -14,11 +15,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 
 import {
+  CONSENT_DOCUMENTS,
   DISABILITY_TYPES,
+  isAdminRole,
   MUNICIPALITIES,
+  REQUIRED_DOC_TYPES,
   SUPPORT_TYPES,
   ZONES,
-} from "@/data/mock";
+} from "@/lib/appData";
 import { useColors } from "@/hooks/useColors";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
@@ -33,16 +37,7 @@ const STEPS = [
   "Confirmar",
 ];
 
-const REQUIRED_DOCS = [
-  "Acta de nacimiento",
-  "CURP",
-  "Comprobante de domicilio",
-  "Identificación oficial del tutor",
-  "Diagnóstico médico",
-  "Comprobante escolar",
-  "Fotografía del beneficiario",
-  "Carta de solicitud",
-];
+const REQUIRED_DOCS = REQUIRED_DOC_TYPES;
 
 type FormDataType = {
   name: string; birthDate: string; curp: string; gender: string; municipality: string;
@@ -91,7 +86,7 @@ const selectStyles = StyleSheet.create({
 function Field({ label, value, onChangeText, placeholder, keyboardType, multiline, colors, maxLength }: any) {
   return (
     <View style={fieldStyles.group}>
-      <Text style={[fieldStyles.label, { color: colors.foreground }]}>{label}</Text>
+      <Text style={[fieldStyles.label, { color: colors.foreground }]}>{label} *</Text>
       <TextInput
         style={[
           fieldStyles.input,
@@ -123,6 +118,8 @@ export default function RegistrarScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { profile } = useAuth();
+  const isInternalUser = isAdminRole(profile?.role);
+  const canRegisterBeneficiary = !profile || profile.role === "tutor" || profile.role === "admin" || profile.role === "capturista";
   const tabBarHeight = Platform.OS === "web" ? 84 : 80;
 
   const [step, setStep] = useState(0);
@@ -130,12 +127,13 @@ export default function RegistrarScreen() {
   const [docs, setDocs] = useState<Record<string, { uri: string, name: string, type: string }>>({});
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittedBeneficiaryId, setSubmittedBeneficiaryId] = useState<string | null>(null);
+  const [uploadingConsent, setUploadingConsent] = useState<string | null>(null);
   
   const [folio, setFolio] = useState("GS-2026-" + Math.floor(Math.random() * 9000 + 1000).toString());
 
   const set = (field: keyof FormDataType, value: string) => setForm((f) => ({ ...f, [field]: value }));
 
-  // FORMATO DE FECHA MEJORADO (Detecta si borras para no trabarse)
   const handleDateChange = (text: string) => {
     if (text.length < form.birthDate.length) {
       set("birthDate", text);
@@ -191,8 +189,55 @@ export default function RegistrarScreen() {
     }
   };
 
+  // VALIDACIÓN INTELIGENTE (Te redirige a donde falta el dato)
+  const validateStep = (currentStep: number) => {
+    let isValid = true;
+    let errorMsg = "";
+
+    if (currentStep === 0) {
+      if (!form.name || !form.birthDate || !form.curp || !form.gender || !form.municipality || !form.zone || !form.address || !form.school || !form.gradeLevel || !form.disabilityType || !form.diagnosis || !form.needs || !form.observations) {
+        errorMsg = "Debes llenar todos los datos del Beneficiario para avanzar.";
+        isValid = false;
+      } else if (form.curp.length !== 18) {
+        errorMsg = "La CURP debe tener exactamente 18 caracteres.";
+        isValid = false;
+      } else if (form.birthDate.length !== 10) {
+        errorMsg = "La fecha de nacimiento debe estar en formato DD/MM/AAAA.";
+        isValid = false;
+      }
+    } else if (currentStep === 1) {
+      if (!form.tutorName || !form.relationship || !form.tutorPhone || !form.emergencyPhone || !form.tutorEmail || !form.tutorAddress || !form.occupation) {
+        errorMsg = "Debes llenar todos los datos del Tutor para avanzar.";
+        isValid = false;
+      }
+    } else if (currentStep === 2) {
+      if (!form.bloodType || !form.allergies || !form.primaryDiagnosis || !form.treatingDoctor || !form.hospital || !form.treatingSpecialty) {
+        errorMsg = "Debes llenar toda la información médica para avanzar.";
+        isValid = false;
+      }
+    } else if (currentStep === 3) {
+      if (!form.shirtSize || !form.shoeSize || !form.supportType || !form.supportReason || !form.additionalComments) {
+        errorMsg = "Debes llenar toda la información de logística y apoyo.";
+        isValid = false;
+      }
+    } else if (currentStep === 4) {
+      const missingDocs = REQUIRED_DOCS.filter(doc => !docs[doc]);
+      if (missingDocs.length > 0) {
+        errorMsg = `Es obligatorio subir todos los documentos.\nFaltan:\n- ${missingDocs.join("\n- ")}`;
+        isValid = false;
+      }
+    }
+
+    if (!isValid) {
+      Alert.alert("Datos faltantes", errorMsg);
+    }
+    return isValid;
+  };
+
   const handleNext = () => {
-    if (step < STEPS.length - 1) setStep((s) => s + 1);
+    if (validateStep(step)) {
+      setStep((s) => s + 1);
+    }
   };
 
   const handleBack = () => {
@@ -200,8 +245,12 @@ export default function RegistrarScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!form.name || !form.curp) {
-      return Alert.alert("Campos incompletos", "Por favor ingresa al menos el nombre y CURP del beneficiario.");
+    // Validamos todo de nuevo por seguridad
+    for (let i = 0; i <= 4; i++) {
+      if (!validateStep(i)) {
+        setStep(i); // Te regresa al paso exacto donde falta algo
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -209,7 +258,7 @@ export default function RegistrarScreen() {
     try {
       let formattedDate = new Date().toISOString().split('T')[0];
       let age = null;
-      if (form.birthDate) {
+      if (form.birthDate && form.birthDate.includes("/")) {
         const parts = form.birthDate.split("/");
         if (parts.length === 3) {
           formattedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
@@ -240,24 +289,37 @@ Adicionales: ${form.additionalComments}
 ${form.observations}
       `.trim();
 
+      let linkedTutorId: string | null = profile?.role === "tutor" ? profile.id : null;
+
+      if (isInternalUser && form.tutorEmail) {
+        const { data: tutorProfile } = await supabase
+          .from("users")
+          .select("id")
+          .eq("email", form.tutorEmail.trim().toLowerCase())
+          .eq("role", "tutor")
+          .maybeSingle();
+
+        linkedTutorId = tutorProfile?.id ?? null;
+      }
+
       const payload = {
         folio: folio,
         name: form.name,
         birth_date: formattedDate,
         age: age,
         curp: form.curp,
-        gender: form.gender || "No especificado",
-        municipality: form.municipality || "No especificado",
-        zone: form.zone || "No especificado",
-        address: form.address || "No especificado",
+        gender: form.gender,
+        municipality: form.municipality,
+        zone: form.zone,
+        address: form.address,
         school: form.school,
         grade_level: form.gradeLevel,
-        disability_type: form.disabilityType || "No especificada",
-        diagnosis: form.diagnosis || "No especificado",
+        disability_type: form.disabilityType,
+        diagnosis: form.diagnosis,
         needs: form.needs,
         status: "pendiente",
         
-        tutor_id: profile?.id || null, 
+        tutor_id: linkedTutorId, 
         tutor_name: form.tutorName || profile?.name || "Sin especificar",
         
         blood_type: form.bloodType,
@@ -265,12 +327,19 @@ ${form.observations}
         emergency_phone: form.emergencyPhone,
         shirt_size: form.shirtSize,
         shoe_size: form.shoeSize,
-        support_type: form.supportType || "No especificado",
+        support_type: form.supportType,
         notes: compiledNotes,
       };
 
       const { data: newBen, error: benError } = await supabase.from("beneficiaries").insert(payload).select().single();
-      if (benError) throw benError;
+      
+      // Control de error específico de CURP duplicada
+      if (benError) {
+        if (benError.code === '23505' || benError.message.includes('curp')) {
+          throw new Error("Esta CURP ya se encuentra registrada en el sistema. Modifícala o revisa los expedientes existentes.");
+        }
+        throw benError;
+      }
 
       const docEntries = Object.entries(docs);
       if (docEntries.length > 0 && newBen?.id) {
@@ -288,11 +357,66 @@ ${form.observations}
         }
       }
 
+      if (newBen?.id) {
+        const { error: consentError } = await supabase.from("documents").insert(
+          CONSENT_DOCUMENTS.map((doc) => ({
+            beneficiary_id: newBen.id,
+            name: doc.name,
+            document_type: doc.type,
+            status: "pendiente",
+            admin_comment: null,
+          }))
+        );
+        if (consentError) console.error("Error al crear permisos de firma:", consentError);
+        setSubmittedBeneficiaryId(newBen.id);
+      }
+
       setSubmitted(true);
     } catch (error: any) {
-      Alert.alert("Error al enviar", error.message || "Asegúrate de llenar correctamente los datos.");
+      console.error(error);
+      if (!error) error = {};
+      Alert.alert("No se pudo registrar", error.message || "Revisa tu conexión o intenta nuevamente.");
+      // Si fue error de CURP, regresamos al paso 0 para que la corrijan
+      if ((error.message || "").includes("CURP")) {
+        setStep(0);
+      }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleUploadSignedConsent = async (docType: string, docName: string) => {
+    if (!submittedBeneficiaryId) return;
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets?.length) return;
+
+      const file = result.assets[0];
+      setUploadingConsent(docType);
+      const publicUrl = await uploadDocToStorage(file.uri, file.name);
+      if (!publicUrl) throw new Error("No se pudo subir el archivo firmado.");
+
+      const { error } = await supabase
+        .from("documents")
+        .update({
+          admin_comment: publicUrl,
+          status: "pendiente",
+          upload_date: new Date().toISOString().split("T")[0],
+        })
+        .eq("beneficiary_id", submittedBeneficiaryId)
+        .eq("document_type", docType);
+
+      if (error) throw error;
+      Alert.alert("Archivo recibido", `${docName} se subió correctamente.`);
+    } catch (error: any) {
+      Alert.alert("No se pudo subir", error.message || "Intenta nuevamente.");
+    } finally {
+      setUploadingConsent(null);
     }
   };
 
@@ -301,12 +425,34 @@ ${form.observations}
     setDocs({});
     setStep(0);
     setFolio("GS-2026-" + Math.floor(Math.random() * 9000 + 1000).toString());
+    setSubmittedBeneficiaryId(null);
     setSubmitted(false);
   };
 
+  if (!canRegisterBeneficiary) {
+    return (
+      <View style={[styles.permissionContainer, { backgroundColor: colors.background, paddingTop: insets.top + 40 }]}>
+        <View style={[styles.successIcon, { backgroundColor: colors.warning + "15" }]}>
+          <Feather name="lock" size={42} color={colors.warning} />
+        </View>
+        <Text style={[styles.successTitle, { color: colors.foreground }]}>Sin permiso de captura</Text>
+        <Text style={[styles.successSub, { color: colors.mutedForeground }]}>
+          Tu rol puede consultar su panel, pero no registrar beneficiarios.
+        </Text>
+        <Pressable style={[styles.newButton, { backgroundColor: colors.primary }]} onPress={() => router.replace("/admin")}>
+          <Text style={styles.newButtonText}>Volver al panel</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   if (submitted) {
     return (
-      <View style={[styles.successContainer, { backgroundColor: colors.background, paddingTop: insets.top + 40, paddingBottom: tabBarHeight + insets.bottom }]}>
+      <KeyboardAwareScrollViewCompat
+        style={{ backgroundColor: colors.background }}
+        contentContainerStyle={[styles.successContainer, { paddingTop: insets.top + 40, paddingBottom: tabBarHeight + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={[styles.successIcon, { backgroundColor: colors.success + "15" }]}>
           <Feather name="check-circle" size={56} color={colors.success} />
         </View>
@@ -317,10 +463,54 @@ ${form.observations}
           <Text style={[styles.folioValue, { color: colors.primary }]}>{folio}</Text>
           <Text style={[styles.folioNote, { color: colors.mutedForeground }]}>Guarda este folio para dar seguimiento a tu expediente.</Text>
         </View>
+        <View style={[styles.consentSection, { borderColor: colors.border }]}>
+          <Text style={[styles.consentTitle, { color: colors.foreground }]}>Archivos para firma</Text>
+          <Text style={[styles.consentIntro, { color: colors.mutedForeground }]}>
+            Firma estos permisos y súbelos para completar el expediente.
+          </Text>
+          {CONSENT_DOCUMENTS.map((doc) => (
+            <View key={doc.type} style={[styles.consentCard, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+              <View style={[styles.consentIcon, { backgroundColor: colors.primary + "15" }]}>
+                <Feather name="file-text" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.consentName, { color: colors.foreground }]}>{doc.shortName}</Text>
+                <Text style={[styles.consentDesc, { color: colors.mutedForeground }]} numberOfLines={2}>
+                  {doc.description}
+                </Text>
+              </View>
+              <View style={styles.consentActions}>
+                <Pressable
+                  style={[styles.consentActionBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/consentimiento/[type]",
+                      params: { type: doc.type, beneficiaryId: submittedBeneficiaryId ?? "", folio },
+                    } as any)
+                  }
+                >
+                  <Feather name="eye" size={14} color={colors.foreground} />
+                </Pressable>
+                <Pressable
+                  style={[styles.consentActionBtn, { backgroundColor: colors.primary, opacity: uploadingConsent === doc.type ? 0.7 : 1 }]}
+                  onPress={() => handleUploadSignedConsent(doc.type, doc.name)}
+                  disabled={uploadingConsent === doc.type}
+                >
+                  {uploadingConsent === doc.type ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Feather name="upload" size={14} color="#FFFFFF" />
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          ))}
+        </View>
+
         <Pressable style={[styles.newButton, { backgroundColor: colors.primary }]} onPress={handleReset}>
           <Text style={styles.newButtonText}>Registrar otro beneficiario</Text>
         </Pressable>
-      </View>
+      </KeyboardAwareScrollViewCompat>
     );
   }
 
@@ -340,7 +530,6 @@ ${form.observations}
         </View>
       </View>
 
-      {/* ÁREA DESLIZABLE QUE INCLUYE LOS BOTONES */}
       <KeyboardAwareScrollViewCompat 
         contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + tabBarHeight + 20 }} 
         showsVerticalScrollIndicator={false}
@@ -354,16 +543,16 @@ ${form.observations}
               <Field label="CURP" value={form.curp} onChangeText={(v:any) => set("curp", v.toUpperCase())} placeholder="18 caracteres" maxLength={18} colors={colors} />
               
               <View style={fieldStyles.group}>
-                <Text style={[fieldStyles.label, { color: colors.foreground }]}>Género</Text>
+                <Text style={[fieldStyles.label, { color: colors.foreground }]}>Género *</Text>
                 <SelectChips options={["Masculino", "Femenino", "No especificado"]} value={form.gender} onSelect={(v:any) => set("gender", v)} colors={colors} />
               </View>
               <View style={fieldStyles.group}>
-                <Text style={[fieldStyles.label, { color: colors.foreground }]}>Municipio</Text>
+                <Text style={[fieldStyles.label, { color: colors.foreground }]}>Municipio *</Text>
                 <SelectChips options={MUNICIPALITIES.slice(0, 4)} value={form.municipality} onSelect={(v:any) => set("municipality", v)} colors={colors} />
                 <SelectChips options={MUNICIPALITIES.slice(4)} value={form.municipality} onSelect={(v:any) => set("municipality", v)} colors={colors} />
               </View>
               <View style={fieldStyles.group}>
-                <Text style={[fieldStyles.label, { color: colors.foreground }]}>Zona</Text>
+                <Text style={[fieldStyles.label, { color: colors.foreground }]}>Zona *</Text>
                 <SelectChips options={ZONES} value={form.zone} onSelect={(v:any) => set("zone", v)} colors={colors} />
               </View>
 
@@ -372,7 +561,7 @@ ${form.observations}
               <Field label="Grado escolar" value={form.gradeLevel} onChangeText={(v:any) => set("gradeLevel", v)} colors={colors} />
               
               <View style={fieldStyles.group}>
-                <Text style={[fieldStyles.label, { color: colors.foreground }]}>Tipo de discapacidad</Text>
+                <Text style={[fieldStyles.label, { color: colors.foreground }]}>Tipo de discapacidad *</Text>
                 <SelectChips options={DISABILITY_TYPES} value={form.disabilityType} onSelect={(v:any) => set("disabilityType", v)} colors={colors} />
               </View>
 
@@ -387,7 +576,7 @@ ${form.observations}
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Datos del Tutor</Text>
               <Field label="Nombre completo del tutor" value={form.tutorName} onChangeText={(v:any) => set("tutorName", v)} colors={colors} />
               <View style={fieldStyles.group}>
-                <Text style={[fieldStyles.label, { color: colors.foreground }]}>Parentesco</Text>
+                <Text style={[fieldStyles.label, { color: colors.foreground }]}>Parentesco *</Text>
                 <SelectChips options={["Madre", "Padre", "Abuelo/a", "Tío/a", "Hermano/a", "Tutor legal"]} value={form.relationship} onSelect={(v:any) => set("relationship", v)} colors={colors} />
               </View>
               <Field label="Teléfono" value={form.tutorPhone} onChangeText={(v:any) => set("tutorPhone", v)} keyboardType="phone-pad" colors={colors} />
@@ -422,7 +611,7 @@ ${form.observations}
                 </View>
               </View>
               <View style={[fieldStyles.group, { marginTop: 10 }]}>
-                <Text style={[fieldStyles.label, { color: colors.foreground }]}>Tipo de apoyo</Text>
+                <Text style={[fieldStyles.label, { color: colors.foreground }]}>Tipo de apoyo *</Text>
                 <SelectChips options={SUPPORT_TYPES} value={form.supportType} onSelect={(v:any) => set("supportType", v)} colors={colors} />
               </View>
               <Field label="Motivo de solicitud" value={form.supportReason} onChangeText={(v:any) => set("supportReason", v)} multiline colors={colors} />
@@ -434,7 +623,7 @@ ${form.observations}
             <>
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Documentos</Text>
               <Text style={[styles.docNote, { color: colors.mutedForeground, marginBottom: 10 }]}>
-                Sube una foto o PDF de los siguientes documentos. Si no los tienes todos ahora, puedes subirlos después.
+                Sube una foto o PDF de los siguientes documentos. Todos son obligatorios.
               </Text>
               
               {REQUIRED_DOCS.map((doc) => {
@@ -445,7 +634,7 @@ ${form.observations}
                       <Feather name={hasFile ? "check-circle" : "file"} size={18} color={hasFile ? colors.primary : colors.mutedForeground} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.docName, { color: hasFile ? colors.foreground : colors.mutedForeground }]}>{doc}</Text>
+                      <Text style={[styles.docName, { color: hasFile ? colors.foreground : colors.mutedForeground }]}>{doc} *</Text>
                       {hasFile && <Text style={{ fontSize: 11, color: colors.primary }} numberOfLines={1}>{docs[doc].name}</Text>}
                     </View>
                     <Pressable
@@ -485,10 +674,8 @@ ${form.observations}
           )}
         </View>
 
-        {/* Espaciador flexible para asegurar que el contenido empuje los botones hacia abajo */}
         <View style={{ flex: 1 }} />
 
-        {/* BOTONES INCLUIDOS DENTRO DEL SCROLL PARA EVITAR PROBLEMAS DE TECLADO */}
         <View style={styles.bottomNav}>
           {step > 0 && (
             <Pressable style={[styles.backButton, { borderColor: colors.border, backgroundColor: colors.muted }]} onPress={handleBack} disabled={isSubmitting}>
@@ -539,7 +726,8 @@ const styles = StyleSheet.create({
   backButtonText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   nextButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, height: 52, borderRadius: 14 },
   nextButtonText: { color: "#FFFFFF", fontSize: 16, fontFamily: "Inter_700Bold" },
-  successContainer: { flex: 1, paddingHorizontal: 24, alignItems: "center", justifyContent: "center", gap: 20 },
+  successContainer: { flexGrow: 1, paddingHorizontal: 24, alignItems: "center", justifyContent: "center", gap: 20 },
+  permissionContainer: { flex: 1, paddingHorizontal: 24, alignItems: "center", justifyContent: "center", gap: 18 },
   successIcon: { width: 100, height: 100, borderRadius: 50, alignItems: "center", justifyContent: "center" },
   successTitle: { fontSize: 26, fontFamily: "Inter_700Bold" },
   successSub: { fontSize: 15, fontFamily: "Inter_400Regular", textAlign: "center" },
@@ -547,6 +735,15 @@ const styles = StyleSheet.create({
   folioLabel: { fontSize: 12, fontFamily: "Inter_400Regular" },
   folioValue: { fontSize: 28, fontFamily: "Inter_700Bold" },
   folioNote: { fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "center" },
+  consentSection: { width: "100%", borderRadius: 16, borderWidth: 1, padding: 14, gap: 10 },
+  consentTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
+  consentIntro: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
+  consentCard: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 12, borderWidth: 1, padding: 10 },
+  consentIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  consentName: { fontSize: 13, fontFamily: "Inter_700Bold" },
+  consentDesc: { fontSize: 11, fontFamily: "Inter_400Regular", lineHeight: 15 },
+  consentActions: { flexDirection: "row", gap: 8 },
+  consentActionBtn: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   newButton: { width: "100%", height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   newButtonText: { color: "#FFFFFF", fontSize: 16, fontFamily: "Inter_700Bold" },
 });

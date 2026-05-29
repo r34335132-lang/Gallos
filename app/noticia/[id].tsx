@@ -2,7 +2,9 @@ import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React from "react";
 import {
+  ActivityIndicator,
   Image,
+  ImageSourcePropType,
   Platform,
   Pressable,
   ScrollView,
@@ -11,11 +13,11 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { StatusBadge } from "@/components/StatusBadge";
-import { NEWS } from "@/data/mock";
 import { useColors } from "@/hooks/useColors";
+import { mapNews, type NewsArticle } from "@/lib/appData";
+import { supabase } from "@/lib/supabase";
 
-const IMAGES: Record<string, ReturnType<typeof require>> = {
+const IMAGES: Record<string, ImageSourcePropType> = {
   news_1: require("@/assets/images/news_1.png"),
   news_2: require("@/assets/images/news_2.png"),
   hero_banner: require("@/assets/images/hero_banner.png"),
@@ -36,7 +38,51 @@ export default function NewsDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const article = NEWS.find((n) => n.id === id);
+  const [article, setArticle] = React.useState<NewsArticle | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    const loadArticle = async () => {
+      if (!id) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const { data, error } = await supabase
+          .from("news")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (mounted) setArticle(data ? mapNews(data) : null);
+      } catch (error) {
+        console.error("Error al cargar noticia:", error);
+        if (mounted) setArticle(null);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadArticle();
+
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <View style={[styles.notFound, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.notFoundText, { color: colors.mutedForeground }]}>
+          Cargando noticia...
+        </Text>
+      </View>
+    );
+  }
 
   if (!article) {
     return (
@@ -51,7 +97,10 @@ export default function NewsDetailScreen() {
     );
   }
 
-  const imgSrc = IMAGES[article.image] ?? IMAGES.hero_banner;
+  const imgSrc: ImageSourcePropType =
+    article.image && article.image.startsWith("http")
+      ? { uri: article.image }
+      : IMAGES[article.image ?? ""] ?? IMAGES.hero_banner;
   const catColor = CATEGORY_COLORS[article.category] ?? colors.primary;
 
   return (

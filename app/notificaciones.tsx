@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Platform,
   Pressable,
@@ -10,26 +11,10 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
-
-interface Notification {
-  id: string;
-  type: "success" | "error" | "info" | "warning";
-  title: string;
-  body: string;
-  time: string;
-  read: boolean;
-}
-
-const NOTIFICATIONS: Notification[] = [
-  { id: "notif1", type: "success", title: "Solicitud aprobada", body: "El expediente GS-2026-001 de Valentina López ha sido aprobado.", time: "Hace 1 hora", read: false },
-  { id: "notif2", type: "error", title: "Documento rechazado", body: "El diagnóstico médico del expediente GS-2026-008 fue rechazado. Por favor vuelva a subir.", time: "Hace 3 horas", read: false },
-  { id: "notif3", type: "info", title: "Nuevo comunicado", body: "Se ha publicado un nuevo comunicado: Convocatoria para nuevos beneficiarios — Mayo 2026.", time: "Hace 5 horas", read: true },
-  { id: "notif4", type: "warning", title: "Corrección solicitada", body: "El expediente GS-2026-003 requiere corrección en el documento de diagnóstico médico.", time: "Ayer", read: true },
-  { id: "notif5", type: "info", title: "En revisión", body: "Tu solicitud GS-2026-009 está siendo revisada por el equipo de la fundación.", time: "Ayer", read: true },
-  { id: "notif6", type: "success", title: "Nuevo patrocinador", body: "Grupo Industrial del Norte ha renovado su patrocinio como Patrocinador Oro.", time: "Hace 3 días", read: true },
-  { id: "notif7", type: "info", title: "Nueva noticia publicada", body: "Historia de impacto: Valentina, de la silla a la cancha.", time: "Hace 4 días", read: true },
-];
+import { mapNotification, type AppNotification } from "@/lib/appData";
+import { supabase } from "@/lib/supabase";
 
 const TYPE_CONFIG: Record<string, { icon: keyof typeof Feather.glyphMap; color: string; bg: string }> = {
   success: { icon: "check-circle", color: "#059669", bg: "#D1FAE5" },
@@ -41,7 +26,41 @@ const TYPE_CONFIG: Record<string, { icon: keyof typeof Feather.glyphMap; color: 
 export default function NotificacionesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const unread = NOTIFICATIONS.filter((n) => !n.read).length;
+  const { profile } = useAuth();
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const unread = notifications.filter((n) => !n.read).length;
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadNotifications = async () => {
+      try {
+        let query = supabase
+          .from("notifications")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (profile?.id) {
+          query = query.or(`user_id.eq.${profile.id},user_id.is.null`);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        if (mounted) setNotifications((data || []).map(mapNotification));
+      } catch (error) {
+        console.error("Error al cargar notificaciones:", error);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadNotifications();
+
+    return () => {
+      mounted = false;
+    };
+  }, [profile?.id]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -68,54 +87,70 @@ export default function NotificacionesScreen() {
         <View style={{ width: 22 }} />
       </View>
 
-      <FlatList
-        data={NOTIFICATIONS}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={[styles.list, { paddingBottom: 40 + insets.bottom }]}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => {
-          const config = TYPE_CONFIG[item.type];
-          return (
-            <Pressable
-              style={({ pressed }) => [
-                styles.notifCard,
-                {
-                  backgroundColor: item.read ? colors.background : colors.primary + "06",
-                  borderColor: item.read ? colors.border : colors.primary + "25",
-                  opacity: pressed ? 0.85 : 1,
-                  shadowColor: colors.foreground,
-                },
-              ]}
-            >
-              <View style={[styles.notifIcon, { backgroundColor: config.bg }]}>
-                <Feather name={config.icon} size={20} color={config.color} />
-              </View>
-              <View style={styles.notifContent}>
-                <View style={styles.notifHeader}>
-                  <Text style={[styles.notifTitle, { color: colors.foreground }]}>
-                    {item.title}
-                  </Text>
-                  {!item.read && (
-                    <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />
-                  )}
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ color: colors.mutedForeground, marginTop: 10 }}>Cargando notificaciones...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={notifications}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={[styles.list, { paddingBottom: 40 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Feather name="bell-off" size={36} color={colors.mutedForeground} />
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+                No tienes notificaciones por ahora.
+              </Text>
+            </View>
+          }
+          renderItem={({ item }) => {
+            const config = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.info;
+            return (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.notifCard,
+                  {
+                    backgroundColor: item.read ? colors.background : colors.primary + "06",
+                    borderColor: item.read ? colors.border : colors.primary + "25",
+                    opacity: pressed ? 0.85 : 1,
+                    shadowColor: colors.foreground,
+                  },
+                ]}
+              >
+                <View style={[styles.notifIcon, { backgroundColor: config.bg }]}>
+                  <Feather name={config.icon} size={20} color={config.color} />
                 </View>
-                <Text style={[styles.notifBody, { color: colors.mutedForeground }]} numberOfLines={2}>
-                  {item.body}
-                </Text>
-                <Text style={[styles.notifTime, { color: colors.mutedForeground }]}>
-                  {item.time}
-                </Text>
-              </View>
-            </Pressable>
-          );
-        }}
-      />
+                <View style={styles.notifContent}>
+                  <View style={styles.notifHeader}>
+                    <Text style={[styles.notifTitle, { color: colors.foreground }]}>
+                      {item.title}
+                    </Text>
+                    {!item.read && (
+                      <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />
+                    )}
+                  </View>
+                  <Text style={[styles.notifBody, { color: colors.mutedForeground }]} numberOfLines={2}>
+                    {item.body}
+                  </Text>
+                  <Text style={[styles.notifTime, { color: colors.mutedForeground }]}>
+                    {item.time}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          }}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -137,6 +172,8 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: "#0D2B6E", fontSize: 11, fontFamily: "Inter_700Bold" },
   list: { paddingHorizontal: 20, paddingTop: 16, gap: 10 },
+  empty: { alignItems: "center", paddingVertical: 60, gap: 12 },
+  emptyText: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center" },
   notifCard: {
     flexDirection: "row",
     gap: 12,

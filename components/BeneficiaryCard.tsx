@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
-import type { Beneficiary } from "@/data/mock";
+import type { Beneficiary } from "@/lib/appData";
 import { StatusBadge } from "./StatusBadge";
 
 interface Props {

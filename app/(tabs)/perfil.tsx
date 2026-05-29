@@ -28,12 +28,13 @@ export default function PerfilScreen() {
   const colors = useColors();
   
   // EXTRAEMOS LAS VARIABLES CORRECTAS DEL AUTH CONTEXT
-  const { profile, signOut, isGuest } = useAuth(); 
+  const { profile, signOut } = useAuth(); 
   const insets = useSafeAreaInsets();
   const tabBarHeight = Platform.OS === "web" ? 84 : 60;
 
   // VERIFICAR SI EL USUARIO TIENE PERMISOS ADMINISTRATIVOS
-  const isAdmin = ["admin", "capturista", "validador", "comunicacion"].includes(profile?.role || "");
+  const role = profile?.role || "";
+  const isInternal = ["admin", "capturista", "validador", "comunicacion"].includes(role);
 
   const tutorItems = [
     { icon: "users" as const, label: "Mis beneficiarios", route: "/(tabs)/expedientes" },
@@ -43,18 +44,24 @@ export default function PerfilScreen() {
 
   const adminItems = [
     { icon: "settings" as const, label: "Panel administrador", route: "/admin" },
+    { icon: "user-plus" as const, label: "Registrar beneficiario", route: "/(tabs)/registrar" },
+    { icon: "file-text" as const, label: "Noticias", route: "/(tabs)/noticias" },
     { icon: "bar-chart-2" as const, label: "Estadísticas", route: "/estadisticas" },
     { icon: "users" as const, label: "Expedientes", route: "/(tabs)/expedientes" },
     { icon: "award" as const, label: "Patrocinadores", route: "/patrocinadores" },
     { icon: "bell" as const, label: "Notificaciones", route: "/notificaciones" },
   ];
   
-  const guestItems = [
-    { icon: "bell" as const, label: "Notificaciones", route: "/notificaciones" },
-  ];
-
   // ASIGNAR EL MENÚ CORRECTO SEGÚN EL ROL
-  const menuItems = isAdmin ? adminItems : (isGuest ? guestItems : tutorItems);
+  const allowedRoutesByRole: Record<string, string[]> = {
+    admin: ["/admin", "/(tabs)/registrar", "/(tabs)/noticias", "/estadisticas", "/(tabs)/expedientes", "/patrocinadores", "/notificaciones"],
+    capturista: ["/admin", "/(tabs)/registrar", "/(tabs)/expedientes", "/notificaciones"],
+    validador: ["/admin", "/(tabs)/expedientes", "/notificaciones"],
+    comunicacion: ["/admin", "/(tabs)/noticias", "/notificaciones"],
+  };
+  const menuItems = isInternal
+    ? adminItems.filter((item) => allowedRoutesByRole[role]?.includes(item.route))
+    : tutorItems;
 
   const handleLogout = async () => {
     await signOut(); // Se usa la función signOut del contexto
@@ -162,9 +169,9 @@ export default function PerfilScreen() {
         ]}
         onPress={handleLogout}
       >
-        <Feather name={isGuest ? "log-in" : "log-out"} size={18} color={colors.destructive} />
+        <Feather name="log-out" size={18} color={colors.destructive} />
         <Text style={[styles.logoutText, { color: colors.destructive }]}>
-          {isGuest ? "Iniciar sesión / Registrarse" : "Cerrar sesión"}
+          Cerrar sesión
         </Text>
       </Pressable>
     </ScrollView>

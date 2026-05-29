@@ -96,7 +96,7 @@ export default function ExpedienteDetailScreen() {
     );
   };
 
-  // --- NUEVA FUNCIÓN: Actualizar estatus de un documento individual ---
+  // Actualizar estatus de un documento individual
   const updateDocStatus = async (docId: string, status: string, docName: string) => {
     Alert.alert(
       "Confirmar",
@@ -186,88 +186,53 @@ export default function ExpedienteDetailScreen() {
           </View>
           <View style={styles.identityInfo}>
             <Text style={[styles.benefName, { color: colors.foreground }]}>{b.name}</Text>
-            <Text style={[styles.benefAge, { color: colors.mutedForeground }]}>
-              {b.age || "?"} años · {b.gender}
-            </Text>
             <Text style={[styles.folioText, { color: colors.primary }]}>Folio: {b.folio}</Text>
-            <StatusBadge status={b.status} />
+            <View style={{ marginTop: 4 }}>
+              <StatusBadge status={b.status} />
+            </View>
           </View>
         </View>
 
-        {/* Info Personal */}
+        {/* Info Básica */}
         <View style={[styles.section, { borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Información personal</Text>
-          {[
-            { label: "CURP", value: b.curp },
-            { label: "Fecha de nacimiento", value: b.birth_date },
-            { label: "Municipio", value: b.municipality },
-            { label: "Zona", value: b.zone },
-            { label: "Dirección", value: b.address },
-            { label: "Escuela", value: b.school || "No especificada" },
-            { label: "Grado", value: b.grade_level || "No especificado" },
-          ].map((item) => (
-            <View key={item.label} style={[styles.infoRow, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>{item.label}</Text>
-              <Text style={[styles.infoValue, { color: colors.foreground }]}>{item.value}</Text>
-            </View>
-          ))}
-        </View>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Información General</Text>
+          
+          <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Tutor o Responsable</Text>
+            <Text style={[styles.infoValue, { color: colors.foreground }]}>{b.tutor_name || "No registrado"}</Text>
+          </View>
 
-        {/* Info Médica y Discapacidad */}
-        <View style={[styles.section, { borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Medicina y Discapacidad</Text>
-          {[
-            { label: "Tipo de Sangre", value: b.blood_type || "N/A" },
-            { label: "Alergias", value: b.allergies || "Ninguna" },
-            { label: "Tipo de discapacidad", value: b.disability_type },
-            { label: "Diagnóstico", value: b.diagnosis },
-            { label: "Necesidades", value: b.needs },
-          ].map((item) => (
-            <View key={item.label} style={[styles.infoRow, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>{item.label}</Text>
-              <Text style={[styles.infoValue, { color: colors.foreground }]}>{item.value}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Logística y Tutor */}
-        <View style={[styles.section, { borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Tutor y Logística</Text>
-          {[
-            { label: "Nombre Tutor", value: b.tutor_name },
-            { label: "Tel. Emergencia", value: b.emergency_phone || "No especificado" },
-            { label: "Talla Ropa / Calzado", value: `${b.shirt_size || '?'} / ${b.shoe_size || '?'}` },
-            { label: "Apoyo solicitado", value: b.support_type },
-            { label: "Fecha de registro", value: b.registration_date },
-          ].map((item) => (
-            <View key={item.label} style={[styles.infoRow, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>{item.label}</Text>
-              <Text style={[styles.infoValue, { color: colors.foreground }]}>{item.value}</Text>
-            </View>
-          ))}
+          <View style={[styles.infoRow, { borderBottomColor: "transparent" }]}>
+            <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Fecha de registro</Text>
+            <Text style={[styles.infoValue, { color: colors.foreground }]}>
+              {b.registration_date || b.created_at?.split("T")[0] || "Desconocida"}
+            </Text>
+          </View>
         </View>
 
         {/* Documents */}
         <View style={[styles.section, { borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Documentos</Text>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Documentación Anexa</Text>
           {docs.length === 0 ? (
             <Text style={[styles.emptyDocs, { color: colors.mutedForeground }]}>
               No hay documentos registrados.
             </Text>
           ) : (
-            docs.map((doc) => (
-              <View key={doc.id} style={[styles.docRow, { borderBottomColor: colors.border }]}>
+            docs.map((doc, index) => (
+              <View 
+                key={doc.id} 
+                style={[
+                  styles.docRow, 
+                  { borderBottomColor: colors.border },
+                  index === docs.length - 1 && { borderBottomWidth: 0 } // Quitar línea al último elemento
+                ]}
+              >
                 <View style={[styles.docIconWrap, { backgroundColor: colors.primary + "15" }]}>
                   <Feather name="file-text" size={16} color={colors.primary} />
                 </View>
                 
                 <View style={styles.docInfo}>
                   <Text style={[styles.docName, { color: colors.foreground }]}>{doc.name}</Text>
-                  {doc.upload_date && (
-                    <Text style={[styles.docDate, { color: colors.mutedForeground }]}>
-                      Subido el {doc.upload_date}
-                    </Text>
-                  )}
                   
                   <View style={{ alignSelf: "flex-start", marginTop: 4 }}>
                     <StatusBadge status={doc.status} small />
@@ -310,7 +275,7 @@ export default function ExpedienteDetailScreen() {
         {/* Admin Actions Globales del Expediente */}
         {canChangeBeneficiaryStatus && (
           <View style={[styles.section, { borderColor: colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Acciones del Beneficiario</Text>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Resolución del Expediente</Text>
             <View style={styles.adminButtons}>
               <Pressable
                 style={[styles.adminBtn, { backgroundColor: colors.success }]}
@@ -339,7 +304,7 @@ export default function ExpedienteDetailScreen() {
             
             {b.notes && (
               <View style={[styles.notesCard, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-                <Text style={[styles.notesLabel, { color: colors.mutedForeground }]}>Notas completas y observaciones</Text>
+                <Text style={[styles.notesLabel, { color: colors.mutedForeground }]}>Observaciones internas</Text>
                 <Text style={[styles.notesText, { color: colors.foreground }]}>{b.notes}</Text>
               </View>
             )}
@@ -377,18 +342,17 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
-    alignItems: "flex-start",
+    alignItems: "center",
   },
   avatarLg: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: "center",
     justifyContent: "center",
   },
   identityInfo: { flex: 1, gap: 4 },
   benefName: { fontSize: 18, fontFamily: "Inter_700Bold" },
-  benefAge: { fontSize: 13, fontFamily: "Inter_400Regular" },
   folioText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   section: {
     borderRadius: 14,
@@ -403,12 +367,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     gap: 4,
   },
-  infoLabel: { fontSize: 11, fontFamily: "Inter_400Regular" },
-  infoValue: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  infoLabel: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  infoValue: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   emptyDocs: { fontSize: 14, fontFamily: "Inter_400Regular" },
   docRow: {
     flexDirection: "row",
-    alignItems: "flex-start", // Alineado arriba para que los botones quepan bien
+    alignItems: "flex-start",
     gap: 12,
     paddingVertical: 14,
     borderBottomWidth: 1,
@@ -419,11 +383,10 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2, // Ligeramente bajado para centrarlo con el título
+    marginTop: 2,
   },
-  docInfo: { flex: 1, gap: 4 },
+  docInfo: { flex: 1, gap: 6 },
   docName: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  docDate: { fontSize: 11, fontFamily: "Inter_400Regular" },
   docAdminActions: {
     flexDirection: "row",
     gap: 8,
@@ -444,7 +407,7 @@ const styles = StyleSheet.create({
   },
   actionBtn: { 
     padding: 10,
-    alignSelf: "center", // Centrado verticalmente
+    alignSelf: "center", 
   },
   adminButtons: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 12 },
   adminBtn: {

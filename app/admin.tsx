@@ -75,16 +75,24 @@ export default function AdminScreen() {
     approved_requests: 0, rejected_requests: 0
   });
 
+  // Estados para Noticias
+  const [recentNews, setRecentNews] = useState<any[]>([]);
+  const [editingNewsId, setEditingNewsId] = useState<string | null>(null);
   const [newsTitle, setNewsTitle] = useState("");
   const [newsCategory, setNewsCategory] = useState("Fundación");
   const [newsSummary, setNewsSummary] = useState("");
   const [newsContent, setNewsContent] = useState("");
   const [newsImage, setNewsImage] = useState<string | null>(null);
 
+  // Estados para Galería
+  const [recentPhotos, setRecentPhotos] = useState<any[]>([]);
+  const [editingGalleryId, setEditingGalleryId] = useState<string | null>(null); // Guardará el título del álbum
+  const [originalGalleryMapping, setOriginalGalleryMapping] = useState<Record<string, string>>({}); // Mapa de url -> id de BD
   const [photoTitle, setPhotoTitle] = useState("");
   const [photoDesc, setPhotoDesc] = useState("");
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
 
+  // Estados para Usuarios
   const [staffName, setStaffName] = useState("");
   const [staffEmail, setStaffEmail] = useState("");
   const [staffPhone, setStaffPhone] = useState("");
@@ -100,6 +108,7 @@ export default function AdminScreen() {
 
   useEffect(() => {
     loadStats();
+    loadAdminContent();
   }, []);
 
   useEffect(() => {
@@ -113,7 +122,27 @@ export default function AdminScreen() {
     if (data && !error) setStats(data);
   };
 
-  // ✅ SOLUCIÓN AL BUG: Usamos FormData, que es la forma 100% compatible con React Native
+  const loadAdminContent = async () => {
+    if (canPublishContent) {
+      const { data: newsData } = await supabase.from("news").select("*").order("created_at", { ascending: false }).limit(10);
+      if (newsData) setRecentNews(newsData);
+
+      const { data: photoData } = await supabase.from("gallery_photos").select("*").order("upload_date", { ascending: false });
+      if (photoData) {
+        // Agrupamos las fotos por título para que en la lista se vea 1 ítem por "Álbum/Evento"
+        const uniqueTitles = new Set();
+        const groupedPhotos = [];
+        for (const photo of photoData) {
+          if (!uniqueTitles.has(photo.title)) {
+            uniqueTitles.add(photo.title);
+            groupedPhotos.push(photo);
+          }
+        }
+        setRecentPhotos(groupedPhotos.slice(0, 10));
+      }
+    }
+  };
+
   const uploadImageToStorage = async (fileUri: string): Promise<string | null> => {
     try {
       const fileExt = fileUri.split(".").pop() || "jpeg";
@@ -168,126 +197,178 @@ export default function AdminScreen() {
     setGalleryImages(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
-  const handlePublishNews = async () => {
-    if (!canPublishContent) {
-      Alert.alert("Sin permisos", "Tu rol no puede publicar noticias.");
-      return;
-    }
-    if (!newsTitle || !newsContent) return Alert.alert("Campos vacíos", "Completa título y contenido.");
-    setUploading(true);
-    let publicUrl = null;
+  const selectNewsForEdit = (item: any) => {
+    setEditingNewsId(item.id);
+    setNewsTitle(item.title || "");
+    setNewsSummary(item.summary || "");
+    setNewsContent(item.content || "");
+    setNewsCategory(item.category || "Fundación");
+    setNewsImage(item.image_url || null);
+    
+    // Auto-scroll al inicio (opcional pero ayuda a la experiencia)
+  };
 
-    if (newsImage) {
-      publicUrl = await uploadImageToStorage(newsImage);
-      if (!publicUrl) {
+  const selectGalleryForEdit = async (item: any) => {
+    setUploading(true);
+    // Buscar TODAS las fotos de la base de datos que pertenezcan a este título/álbum
+    const { data, error } = await supabase
+      .from("gallery_photos")
+      .select("*")
+      .eq("title", item.title);
+
+    if (data && !error) {
+      setEditingGalleryId(item.title); // Usamos el título como identificador de la edición
+      setPhotoTitle(item.title || "");
+      setPhotoDesc(data[0]?.description || "");
+      setGalleryImages(data.map((d: any) => d.image_url));
+
+      // Guardar mapeo de URL original -> ID de la base de datos
+      // Esto nos servirá para saber qué ID borrar si el usuario elimina una foto de la vista
+      const mapping: Record<string, string> = {};
+      data.forEach((d: any) => {
+        if (d.image_url) mapping[d.image_url] = d.id;
+      });
+      setOriginalGalleryMapping(mapping);
+    }
+    setUploading(false);
+  };
+
+  const handlePublishNews = async () => {
+    if (!canPublishContent) return Alert.alert("Sin permisos", "Tu rol no puede publicar.");
+    if (!newsTitle || !newsContent) return Alert.alert("Campos vacíos", "Completa título y contenido.");
+    
+    setUploading(true);
+    let publicUrl = newsImage;
+
+    if (newsImage && !newsImage.startsWith("http")) {
+      const uploadedUrl = await uploadImageToStorage(newsImage);
+      if (!uploadedUrl) {
         setUploading(false);
         return Alert.alert("Error", "No se pudo subir la foto de la noticia.");
       }
+      publicUrl = uploadedUrl;
     }
 
-    const { error } = await supabase.from("news").insert({
+    const payload = {
       title: newsTitle,
       category: newsCategory,
-      author: "Administración Gallos",
       summary: newsSummary,
       content: newsContent,
       image_url: publicUrl,
-    });
+    };
+
+    let error;
+
+    if (editingNewsId) {
+      const { error: updateError } = await supabase.from("news").update(payload).eq("id", editingNewsId);
+      error = updateError;
+    } else {
+      const { error: insertError } = await supabase.from("news").insert({ ...payload, author: "Administración Gallos" });
+      error = insertError;
+    }
 
     setUploading(false);
     if (!error) {
-      Alert.alert("Éxito", "Noticia publicada exitosamente.");
-      setNewsTitle(""); setNewsSummary(""); setNewsContent(""); setNewsImage(null);
-      setActiveTab("dashboard");
+      Alert.alert("Éxito", editingNewsId ? "Noticia actualizada." : "Noticia publicada.");
+      setNewsTitle(""); setNewsSummary(""); setNewsContent(""); setNewsImage(null); setEditingNewsId(null);
+      loadAdminContent();
     } else {
-      console.error("❌ Error al insertar noticia en BD:", error);
-      Alert.alert("Error de permisos", "No se pudo guardar la noticia en la base de datos.");
+      Alert.alert("Error", "No se pudo guardar la noticia.");
     }
   };
 
   const handleUploadPhoto = async () => {
-    if (!canPublishContent) {
-      Alert.alert("Sin permisos", "Tu rol no puede subir fotos.");
-      return;
-    }
+    if (!canPublishContent) return Alert.alert("Sin permisos", "Tu rol no puede subir fotos.");
+    if (!photoTitle) return Alert.alert("Falta Título", "El título es obligatorio para agrupar el álbum.");
     if (galleryImages.length === 0) return Alert.alert("Faltan Imágenes", "Selecciona al menos una fotografía.");
+    
     setUploading(true);
-
     let successCount = 0;
 
-    for (const uri of galleryImages) {
-      const publicUrl = await uploadImageToStorage(uri);
+    if (editingGalleryId) {
+      // 1. Separamos las imágenes que ya estaban en BD (http) de las nuevas locales (file://)
+      const keptUrls = galleryImages.filter(uri => uri.startsWith("http"));
+      const newUris = galleryImages.filter(uri => !uri.startsWith("http"));
 
-      if (publicUrl) {
-        const { error } = await supabase.from("gallery_photos").insert({
+      // 2. Buscamos qué imágenes se eliminaron de la vista y las borramos de la base de datos
+      const originalUrls = Object.keys(originalGalleryMapping);
+      const deletedUrls = originalUrls.filter(url => !keptUrls.includes(url));
+      const deletedIds = deletedUrls.map(url => originalGalleryMapping[url]);
+
+      if (deletedIds.length > 0) {
+        await supabase.from("gallery_photos").delete().in("id", deletedIds);
+      }
+
+      // 3. Actualizamos los textos (título, descripción) de las imágenes viejas que SÍ se conservaron
+      const keptIds = keptUrls.map(url => originalGalleryMapping[url]);
+      if (keptIds.length > 0) {
+        await supabase.from("gallery_photos").update({
           title: photoTitle,
           description: photoDesc,
-          image_url: publicUrl,
-        });
+        }).in("id", keptIds);
+        successCount += keptIds.length;
+      }
 
-        if (!error) {
-          successCount++;
-        } else {
-          console.error("❌ Error BD gallery_photos:", error);
+      // 4. Subimos las fotos nuevas agregadas a este mismo álbum
+      for (const uri of newUris) {
+        const publicUrl = await uploadImageToStorage(uri);
+        if (publicUrl) {
+          const { error } = await supabase.from("gallery_photos").insert({
+            title: photoTitle,
+            description: photoDesc,
+            image_url: publicUrl,
+          });
+          if (!error) successCount++;
+        }
+      }
+    } else {
+      // FLUJO DE ÁLBUM TOTALMENTE NUEVO
+      for (const uri of galleryImages) {
+        const publicUrl = await uploadImageToStorage(uri);
+        if (publicUrl) {
+          const { error } = await supabase.from("gallery_photos").insert({
+            title: photoTitle,
+            description: photoDesc,
+            image_url: publicUrl,
+          });
+          if (!error) successCount++;
         }
       }
     }
 
     setUploading(false);
     if (successCount > 0) {
-      Alert.alert("Éxito", `Se subieron ${successCount} fotos a la galería.`);
-      setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]);
+      Alert.alert("Éxito", editingGalleryId ? "Galería actualizada correctamente." : `Se guardaron ${successCount} fotos en el nuevo álbum.`);
+      setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]); 
+      setEditingGalleryId(null); setOriginalGalleryMapping({});
+      loadAdminContent();
       setActiveTab("dashboard");
     } else {
-      Alert.alert("Error", "Revisa la consola. No se pudieron subir o guardar las imágenes.");
+      Alert.alert("Error", "No se pudieron guardar las imágenes.");
     }
   };
 
   const handleCreateStaffAccount = async () => {
-    if (!canManageUsers) {
-      Alert.alert("Sin permisos", "Solo una cuenta administradora puede crear usuarios internos.");
-      return;
-    }
-
-    if (!staffName || !staffEmail || !staffPassword) {
-      Alert.alert("Campos incompletos", "Agrega nombre, correo y contraseña temporal.");
-      return;
-    }
-
-    if (staffPassword.length < 6) {
-      Alert.alert("Contraseña corta", "La contraseña debe tener al menos 6 caracteres.");
-      return;
-    }
+    if (!canManageUsers) return Alert.alert("Sin permisos", "Solo admin puede crear usuarios.");
+    if (!staffName || !staffEmail || !staffPassword) return Alert.alert("Incompleto", "Faltan datos.");
+    if (staffPassword.length < 6) return Alert.alert("Error", "Mínimo 6 caracteres en contraseña.");
 
     setUploading(true);
 
     try {
       const normalizedEmail = staffEmail.trim().toLowerCase();
       const isolatedSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-          detectSessionInUrl: false,
-        },
+        auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
       });
 
       const { data: authData, error: authError } = await isolatedSupabase.auth.signUp({
         email: normalizedEmail,
         password: staffPassword,
-        options: {
-          data: {
-            name: staffName.trim(),
-            phone: staffPhone.trim() || null,
-            role: staffRole,
-          },
-        },
+        options: { data: { name: staffName.trim(), phone: staffPhone.trim() || null, role: staffRole } },
       });
 
       if (authError) throw authError;
-
-      if (!authData.user?.id) {
-        throw new Error("Supabase no regresó el ID del nuevo usuario.");
-      }
+      if (!authData.user?.id) throw new Error("Sin ID retornado.");
 
       const { error: profileError } = await supabase.from("users").upsert({
         id: authData.user.id,
@@ -300,15 +381,11 @@ export default function AdminScreen() {
       if (profileError) throw profileError;
 
       await refreshProfile();
-      Alert.alert("Cuenta creada", `La cuenta de ${staffName.trim()} quedó registrada como ${STAFF_ROLES.find((role) => role.value === staffRole)?.label}.`);
-      setStaffName("");
-      setStaffEmail("");
-      setStaffPhone("");
-      setStaffPassword("");
-      setStaffRole("comunicacion");
+      Alert.alert("Cuenta creada", `Se registró a ${staffName.trim()}.`);
+      setStaffName(""); setStaffEmail(""); setStaffPhone(""); setStaffPassword(""); setStaffRole("comunicacion");
       setActiveTab("dashboard");
     } catch (error: any) {
-      Alert.alert("No se pudo crear", error.message || "Revisa permisos de Auth/RLS e intenta de nuevo.");
+      Alert.alert("Error", error.message || "Fallo en creación.");
     } finally {
       setUploading(false);
     }
@@ -335,8 +412,8 @@ export default function AdminScreen() {
         {availableTabs.map((tab) => {
           const label: Record<AdminTab, string> = {
             dashboard: "Resumen",
-            news: "Redactar",
-            photos: "Subir Fotos",
+            news: "Noticias",
+            photos: "Galería",
             users: "Cuentas",
           };
           return (
@@ -397,7 +474,9 @@ export default function AdminScreen() {
         {/* ================= TAB 2: NOTICIAS ================= */}
         {activeTab === "news" && canPublishContent && (
           <View style={styles.formSection}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Publicar Nueva Noticia</Text>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+              {editingNewsId ? "Editar Noticia" : "Publicar Nueva Noticia"}
+            </Text>
             
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.foreground }]}>Título principal</Text>
@@ -427,18 +506,44 @@ export default function AdminScreen() {
             </View>
 
             <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} onPress={handlePublishNews} disabled={uploading}>
-              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Publicar Noticia</Text>}
+              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{editingNewsId ? "Guardar Cambios" : "Publicar Noticia"}</Text>}
             </Pressable>
+            
+            {editingNewsId && (
+              <Pressable style={{ alignItems: "center", marginTop: 10 }} onPress={() => { setEditingNewsId(null); setNewsTitle(""); setNewsContent(""); setNewsImage(null); setNewsSummary(""); }}>
+                <Text style={{ color: colors.primary }}>Cancelar edición</Text>
+              </Pressable>
+            )}
+
+            {/* LISTA PARA SELECCIONAR Y EDITAR NOTICIAS */}
+            <View style={styles.listContainer}>
+              <Text style={[styles.inputLabel, { color: colors.foreground, marginTop: 10 }]}>Noticias Recientes</Text>
+              {recentNews.map(item => (
+                <Pressable key={item.id} style={[styles.listItem, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => selectNewsForEdit(item)}>
+                  <Image source={{ uri: item.image_url }} style={styles.listImg} />
+                  <View style={styles.listInfo}>
+                    <Text style={[styles.listTitle, { color: colors.foreground }]} numberOfLines={1}>{item.title}</Text>
+                    <Text style={[styles.listDate, { color: colors.mutedForeground }]}>{item.category}</Text>
+                  </View>
+                  <View style={[styles.editIconBtn, { backgroundColor: colors.primary + "15" }]}>
+                    <Feather name="edit-2" size={16} color={colors.primary} />
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+
           </View>
         )}
 
         {/* ================= TAB 3: FOTOS ================= */}
         {activeTab === "photos" && canPublishContent && (
           <View style={styles.formSection}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Añadir Fotos a Galería</Text>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+              {editingGalleryId ? "Editar Álbum: " + editingGalleryId : "Crear Nuevo Álbum en Galería"}
+            </Text>
             
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Título (Aplicará a todas)</Text>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Título del Álbum</Text>
               <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} placeholder="Ej. Torneo de Verano" placeholderTextColor={colors.mutedForeground} value={photoTitle} onChangeText={setPhotoTitle} />
             </View>
 
@@ -448,7 +553,7 @@ export default function AdminScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Fotografías seleccionadas ({galleryImages.length})</Text>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Fotografías en este álbum ({galleryImages.length})</Text>
               
               {galleryImages.length > 0 ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 4 }}>
@@ -460,22 +565,48 @@ export default function AdminScreen() {
                       </Pressable>
                     </View>
                   ))}
+                  
+                  {/* Siempre mostrar el botón para añadir más fotos al álbum */}
                   <Pressable style={[styles.addMoreBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => pickImage("gallery")}>
                     <Feather name="plus" size={24} color={colors.mutedForeground} />
-                    <Text style={{ fontSize: 12, color: colors.mutedForeground, marginTop: 4 }}>Añadir</Text>
+                    <Text style={{ fontSize: 12, color: colors.mutedForeground, marginTop: 4 }}>Añadir más</Text>
                   </Pressable>
                 </ScrollView>
               ) : (
                 <Pressable style={[styles.imageBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => pickImage("gallery")}>
                   <Feather name="image" size={32} color={colors.mutedForeground} />
-                  <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>Tocar para seleccionar varias fotos</Text>
+                  <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>Tocar para seleccionar fotos</Text>
                 </Pressable>
               )}
             </View>
 
             <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} onPress={handleUploadPhoto} disabled={uploading}>
-              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Subir {galleryImages.length > 0 ? galleryImages.length : ""} a la Galería</Text>}
+              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{editingGalleryId ? "Actualizar Álbum" : `Publicar ${galleryImages.length > 0 ? galleryImages.length : ""} Fotos`}</Text>}
             </Pressable>
+
+            {editingGalleryId && (
+              <Pressable style={{ alignItems: "center", marginTop: 10 }} onPress={() => { setEditingGalleryId(null); setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]); setOriginalGalleryMapping({}); }}>
+                <Text style={{ color: colors.primary }}>Cancelar edición</Text>
+              </Pressable>
+            )}
+
+            {/* LISTA PARA SELECCIONAR Y EDITAR ÁLBUMES */}
+            <View style={styles.listContainer}>
+              <Text style={[styles.inputLabel, { color: colors.foreground, marginTop: 10 }]}>Álbumes Recientes</Text>
+              {recentPhotos.map((item, i) => (
+                <Pressable key={i} style={[styles.listItem, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => selectGalleryForEdit(item)}>
+                  <Image source={{ uri: item.image_url }} style={styles.listImg} />
+                  <View style={styles.listInfo}>
+                    <Text style={[styles.listTitle, { color: colors.foreground }]} numberOfLines={1}>{item.title}</Text>
+                    <Text style={[styles.listDate, { color: colors.mutedForeground }]}>{item.description || 'Sin descripción'}</Text>
+                  </View>
+                  <View style={[styles.editIconBtn, { backgroundColor: colors.primary + "15" }]}>
+                    <Feather name="edit-2" size={16} color={colors.primary} />
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+            
           </View>
         )}
 
@@ -586,4 +717,13 @@ const styles = StyleSheet.create({
   thumbnailImage: { width: "100%", height: "100%", borderRadius: 12, resizeMode: "cover" },
   removeBadge: { position: "absolute", top: -6, right: -6, backgroundColor: "#EF4444", width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#FFF" },
   addMoreBtn: { width: 100, height: 100, borderRadius: 12, borderWidth: 1, borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
+  
+  // Estilos de la lista de edición
+  listContainer: { marginTop: 12, gap: 10 },
+  listItem: { flexDirection: "row", alignItems: "center", padding: 10, borderWidth: 1, borderRadius: 12, gap: 12 },
+  listImg: { width: 44, height: 44, borderRadius: 8, backgroundColor: "#ccc" },
+  listInfo: { flex: 1, gap: 4 },
+  listTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  listDate: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  editIconBtn: { padding: 8, borderRadius: 8 },
 });

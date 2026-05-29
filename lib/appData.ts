@@ -203,35 +203,21 @@ export const SUPPORT_TYPES = [
   "Apoyo educativo",
 ];
 
+// AQUÍ ESTÁN LOS CAMBIOS PRINCIPALES
 export const REQUIRED_DOC_TYPES = [
+  "Firma carta responsiva",
+  "Carta de uso de imagen",
   "Acta de nacimiento",
-  "CURP",
-  "Comprobante de domicilio",
-  "Identificación oficial del tutor",
-  "Diagnóstico médico",
-  "Comprobante escolar",
-  "Fotografía del beneficiario",
-  "Carta de solicitud",
+  "Certificado médico",
+  "Identificación papá o tutor",
+  "Comprobante domicilio",
+  "Foto del hijo/hija"
 ];
 
-export const CONSENT_DOCUMENTS = [
-  {
-    type: "permiso_participacion_juegos",
-    name: "Permiso para participar en juegos",
-    shortName: "Participación en juegos",
-    description: "Autoriza al beneficiario a participar en actividades deportivas, recreativas y eventos de Gallos Smiling.",
-  },
-  {
-    type: "permiso_uso_imagen",
-    name: "Permiso de uso de imagen",
-    shortName: "Uso de imagen",
-    description: "Autoriza el uso de fotografías, video y material audiovisual del beneficiario para comunicación institucional.",
-  },
-] as const;
+export const CONSENT_DOCUMENTS = [] as const;
 
 export const ALL_DOC_TYPES = [
-  ...REQUIRED_DOC_TYPES,
-  ...CONSENT_DOCUMENTS.map((doc) => doc.name),
+  ...REQUIRED_DOC_TYPES
 ];
 
 export function isAdminRole(role?: string | null) {
@@ -239,7 +225,7 @@ export function isAdminRole(role?: string | null) {
 }
 
 export function getConsentByNameOrType(value?: string | null) {
-  return CONSENT_DOCUMENTS.find((doc) => doc.name === value || doc.type === value);
+  return CONSENT_DOCUMENTS.find((doc) => (doc as any).name === value || (doc as any).type === value);
 }
 
 export function formatDisplayDate(value?: string | null) {

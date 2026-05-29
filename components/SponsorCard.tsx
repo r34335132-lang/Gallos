@@ -9,7 +9,7 @@ interface Props {
   sponsor: Sponsor;
 }
 
-export function SponsorCard({ sponsor }: Props) {
+export default function SponsorCard({ sponsor }: Props) {
   const colors = useColors();
   const isGold = sponsor.level === "Oro";
   const isSilver = sponsor.level === "Plata";

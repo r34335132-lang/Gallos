@@ -17,12 +17,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { createClient } from "@supabase/supabase-js";
 
+import { SponsorCard } from "@/components/SponsorCard";
 import { StatsCard } from "@/components/StatsCard";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { STAFF_ROLES, type UserRole } from "@/lib/appData";
 import { supabase, supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
+
 
 const ADMIN_SECTIONS = [
   { icon: "user-plus" as const, label: "Registrar beneficiario", desc: "Capturar una nueva solicitud en base de datos", route: "/(tabs)/registrar", color: "#059669" },

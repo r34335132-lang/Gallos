@@ -17,14 +17,16 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { createClient } from "@supabase/supabase-js";
 
-import { SponsorCard } from "@/components/SponsorCard";
+// IMPORTACIONES CRÍTICAS:
+// Si estos 3 archivos no existen exactamente con estos nombres, la app crasheará.
 import { StatsCard } from "@/components/StatsCard";
+import SponsorCard from "@/components/SponsorCard"; // <-- SponsorCard va SIN llaves porque le pusimos "export default"
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
+
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { STAFF_ROLES, type UserRole } from "@/lib/appData";
 import { supabase, supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
-import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-
 
 const ADMIN_SECTIONS = [
   { icon: "user-plus" as const, label: "Registrar beneficiario", desc: "Capturar una nueva solicitud en base de datos", route: "/(tabs)/registrar", color: "#059669" },
@@ -138,11 +140,9 @@ export default function AdminScreen() {
 
   const loadAdminContent = async () => {
     if (canPublishContent) {
-      // Cargar Noticias
       const { data: newsData } = await supabase.from("news").select("*").order("created_at", { ascending: false }).limit(10);
       if (newsData) setRecentNews(newsData);
 
-      // Cargar Fotos
       const { data: photoData } = await supabase.from("gallery_photos").select("*").order("upload_date", { ascending: false });
       if (photoData) {
         const uniqueTitles = new Set();
@@ -156,7 +156,6 @@ export default function AdminScreen() {
         setRecentPhotos(groupedPhotos.slice(0, 10));
       }
 
-      // Cargar Patrocinadores
       const { data: sponsorData } = await supabase.from("sponsors").select("*").order("created_at", { ascending: false }).limit(15);
       if (sponsorData) setRecentSponsors(sponsorData);
     }
@@ -218,7 +217,6 @@ export default function AdminScreen() {
     setGalleryImages(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
-  // --- SELECCIÓN PARA EDICIÓN ---
   const selectNewsForEdit = (item: any) => {
     setEditingNewsId(item.id);
     setNewsTitle(item.title || "");
@@ -256,7 +254,6 @@ export default function AdminScreen() {
     setSponsorLogo(item.logo_url || null);
   };
 
-  // --- GUARDADO DE DATOS ---
   const handlePublishNews = async () => {
     if (!canPublishContent) return Alert.alert("Sin permisos", "Tu rol no puede publicar.");
     if (!newsTitle || !newsContent) return Alert.alert("Campos vacíos", "Completa título y contenido.");

@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { SponsorCard } from "@/components/SponsorCard";
+import SponsorCard from "@/components/SponsorCard";
 import { useColors } from "@/hooks/useColors";
 import { mapSponsor, type Sponsor, type SponsorLevel } from "@/lib/appData";
 import { supabase } from "@/lib/supabase";

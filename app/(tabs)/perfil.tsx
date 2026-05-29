@@ -2,7 +2,9 @@ import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React from "react";
 import {
+  Alert,
   Image,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -13,6 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { supabase } from "@/lib/supabase";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Administrador",
@@ -23,6 +26,9 @@ const ROLE_LABELS: Record<string, string> = {
   patrocinador: "Patrocinador",
   visitante: "Visitante",
 };
+
+// --- URL DE POLÍTICAS DE PRIVACIDAD ---
+const PRIVACY_POLICY_URL = "https://bronze-homegrown-706.notion.site/Pol-ticas-de-Privacidad-Aplicaci-n-M-vil-Gallos-Smiling-36f621fdb42180088314d92c2fd39541";
 
 export default function PerfilScreen() {
   const colors = useColors();
@@ -45,7 +51,7 @@ export default function PerfilScreen() {
   const adminItems = [
     { icon: "settings" as const, label: "Panel administrador", route: "/admin" },
     { icon: "user-plus" as const, label: "Registrar beneficiario", route: "/(tabs)/registrar" },
-    { icon: "file-text" as const, label: "Noticias", route: "/(tabs)/noticias" },
+    { icon: "file-text" as const, label: "Noticias", route: "/(tabs)/noticias" }, // Aunque no esté en el tab, pueden acceder desde aquí
     { icon: "bar-chart-2" as const, label: "Estadísticas", route: "/estadisticas" },
     { icon: "users" as const, label: "Expedientes", route: "/(tabs)/expedientes" },
     { icon: "award" as const, label: "Patrocinadores", route: "/patrocinadores" },
@@ -59,13 +65,45 @@ export default function PerfilScreen() {
     validador: ["/admin", "/(tabs)/expedientes", "/notificaciones"],
     comunicacion: ["/admin", "/(tabs)/noticias", "/notificaciones"],
   };
+  
   const menuItems = isInternal
     ? adminItems.filter((item) => allowedRoutesByRole[role]?.includes(item.route))
     : tutorItems;
 
   const handleLogout = async () => {
-    await signOut(); // Se usa la función signOut del contexto
-    // router.replace("/login"); ya está manejado dentro del signOut() en AuthContext
+    await signOut(); 
+  };
+
+  const openPrivacyPolicy = () => {
+    Linking.openURL(PRIVACY_POLICY_URL);
+  };
+
+  // --- FUNCIÓN REQUERIDA POR GOOGLE PLAY PARA ELIMINAR CUENTA ---
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "¿Eliminar cuenta definitivamente?",
+      "Esta acción borrará tus datos personales y credenciales de acceso de forma permanente.\n\nSi tienes problemas, también puedes solicitar la baja enviando un correo a comunicacion@gallossmiling.org.\n\n¿Estás seguro de continuar?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { 
+          text: "Sí, eliminar cuenta", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Borramos su registro público de la tabla
+              if (profile?.id) {
+                await supabase.from("users").delete().eq("id", profile.id);
+              }
+              // Cerramos sesión para expulsarlo de la app
+              await signOut();
+            } catch (error) {
+              console.log("Error eliminando cuenta:", error);
+              Alert.alert("Error", "No se pudo eliminar la cuenta. Por favor, envía un correo a comunicacion@gallossmiling.org solicitando tu baja.");
+            }
+          }
+        }
+      ]
+    );
   };
 
   return (
@@ -130,7 +168,7 @@ export default function PerfilScreen() {
         ))}
       </View>
 
-      {/* Info Section */}
+      {/* Info Section - Políticas y Privacidad */}
       <View style={[styles.menuSection, { backgroundColor: colors.background, borderColor: colors.border }]}>
         <Pressable
           style={[styles.menuItem, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
@@ -142,7 +180,8 @@ export default function PerfilScreen() {
           <Text style={[styles.menuLabel, { color: colors.foreground }]}>Acerca de Gallos Smiling</Text>
           <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
         </Pressable>
-        <Pressable style={styles.menuItem} onPress={() => {}}>
+        
+        <Pressable style={styles.menuItem} onPress={openPrivacyPolicy}>
           <View style={[styles.menuIconWrap, { backgroundColor: "#059669" + "12" }]}>
             <Feather name="shield" size={18} color="#059669" />
           </View>
@@ -165,15 +204,30 @@ export default function PerfilScreen() {
       <Pressable
         style={({ pressed }) => [
           styles.logoutButton,
-          { borderColor: colors.destructive, opacity: pressed ? 0.7 : 1 },
+          { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
         ]}
         onPress={handleLogout}
       >
-        <Feather name="log-out" size={18} color={colors.destructive} />
-        <Text style={[styles.logoutText, { color: colors.destructive }]}>
+        <Feather name="log-out" size={18} color={colors.foreground} />
+        <Text style={[styles.logoutText, { color: colors.foreground }]}>
           Cerrar sesión
         </Text>
       </Pressable>
+
+      {/* Botón de Eliminar Cuenta (Requisito Android) */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.logoutButton,
+          { borderColor: "#EF4444", backgroundColor: "#FEF2F2", opacity: pressed ? 0.7 : 1 },
+        ]}
+        onPress={handleDeleteAccount}
+      >
+        <Feather name="trash-2" size={18} color="#EF4444" />
+        <Text style={[styles.logoutText, { color: "#EF4444" }]}>
+          Eliminar cuenta
+        </Text>
+      </Pressable>
+      
     </ScrollView>
   );
 }
@@ -242,7 +296,7 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
   },
   appInfo: { alignItems: "center", gap: 4 },
-  appInfoText: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  appInfoText: { fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "center" },
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",

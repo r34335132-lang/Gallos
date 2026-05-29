@@ -4,7 +4,7 @@ import { Feather } from "@expo/vector-icons";
 import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 import { useColors } from "@/hooks/useColors";
-import { usePushNotifications } from "@/hooks/usePushNotifications"; // <-- Importación del hook
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 export default function TabLayout() {
   const colors = useColors();
@@ -14,7 +14,7 @@ export default function TabLayout() {
   const isWeb = Platform.OS === "web";
 
   // Inicializar las notificaciones push al cargar la app
-  usePushNotifications(); // <-- Ejecución del hook
+  usePushNotifications();
 
   return (
     <Tabs
@@ -56,11 +56,12 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <Feather name="home" size={22} color={color} />,
         }}
       />
+      {/* SE AGREGÓ GALERÍA EN LUGAR DE NOTICIAS */}
       <Tabs.Screen
-        name="noticias"
+        name="galeria"
         options={{
-          title: "Noticias",
-          tabBarIcon: ({ color }) => <Feather name="file-text" size={22} color={color} />,
+          title: "Galería",
+          tabBarIcon: ({ color }) => <Feather name="image" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -82,6 +83,14 @@ export default function TabLayout() {
         options={{
           title: "Perfil",
           tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} />,
+        }}
+      />
+      
+      {/* OCULTAMOS NOTICIAS DEL MENÚ INFERIOR, PERO SIGUE FUNCIONANDO */}
+      <Tabs.Screen
+        name="noticias"
+        options={{
+          href: null, // Esto oculta el botón pero mantiene viva la ruta
         }}
       />
     </Tabs>

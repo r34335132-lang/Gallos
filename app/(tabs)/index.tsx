@@ -31,6 +31,9 @@ import { supabase } from "@/lib/supabase";
 
 const LOGO = require("@/assets/images/logo.png");
 
+// --- URL DE LA NUEVA IMAGEN PARA EL HERO CARD ---
+const HERO_IMAGE_URL = "https://jfutdmtjcunkvefojlgm.supabase.co/storage/v1/object/public/img/WhatsApp%20Image%202026-05-28%20at%205.22.54%20PM.jpeg";
+
 const QUICK_ACTIONS = [
   { label: "Noticias", icon: "file-text" as const, route: "/(tabs)/noticias", color: "#1A4FA8" },
   { label: "Expedientes", icon: "folder" as const, route: "/(tabs)/expedientes", color: "#059669" },
@@ -76,7 +79,7 @@ export default function HomeScreen() {
               (documentsRes.data || []).map(mapDocument),
               (sponsorsRes.data || []).map(mapSponsor)
             )
-          );
+            );
         }
       } catch (error) {
         console.error("Error al cargar inicio:", error);
@@ -148,7 +151,8 @@ export default function HomeScreen() {
         onPress={() => router.push("/(tabs)/registrar")}
       >
         <Image
-          source={require("@/assets/images/hero_banner.png")}
+          // --- CAMBIO AQUÍ: USAMOS LA URL REMOTA ---
+          source={{ uri: HERO_IMAGE_URL }}
           style={styles.heroImage}
           resizeMode="cover"
         />

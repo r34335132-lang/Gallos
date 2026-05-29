@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator, Platform } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator, Platform, ScrollView } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
-import { REQUIRED_DOC_TYPES } from "@/lib/appData";
+import { REQUIRED_DOC_TYPES, DISABILITY_TYPES } from "@/lib/appData"; // <--- Importamos DISABILITY_TYPES
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 
 export default function RegistrarBeneficiarioScreen() {
@@ -21,11 +21,10 @@ export default function RegistrarBeneficiarioScreen() {
 
   const [beneficiaryName, setBeneficiaryName] = useState("");
   const [tutorName, setTutorName] = useState("");
+  const [curp, setCurp] = useState(""); // <--- Nuevo Estado CURP
+  const [disability, setDisability] = useState("Síndrome de Down"); // <--- Nuevo Estado Discapacidad
   const [documents, setDocuments] = useState<Record<string, DocumentPicker.DocumentPickerResult>>({});
 
-  // =========================================================================
-  // ⚠️ LINK PÚBLICO DEL PDF QUE SUBISTE A SUPABASE
-  // =========================================================================
   const URL_DEL_PDF = "https://jfutdmtjcunkvefojlgm.supabase.co/storage/v1/object/public/img/documents/Gallos%20Smiling%20-%20Carta%20Responsiva.pdf"; 
 
   const pickDocument = async (docType: string) => {
@@ -67,8 +66,12 @@ export default function RegistrarBeneficiarioScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!beneficiaryName || !tutorName) {
-      return Alert.alert("Faltan datos", "Por favor ingresa el nombre del beneficiario y del tutor.");
+    if (!beneficiaryName || !tutorName || !curp) {
+      return Alert.alert("Faltan datos", "El nombre, el tutor y la CURP son obligatorios.");
+    }
+
+    if (curp.length !== 18) {
+       return Alert.alert("CURP Inválida", "La CURP debe tener exactamente 18 caracteres.");
     }
 
     const missingDocs = REQUIRED_DOC_TYPES.filter(doc => !documents[doc]);
@@ -79,7 +82,6 @@ export default function RegistrarBeneficiarioScreen() {
     setLoading(true);
 
     try {
-      // 1. Generar Folio Automático
       const autoFolio = `GS-${Math.floor(100000 + Math.random() * 900000)}`;
 
       // 2. Insertar Beneficiario
@@ -88,8 +90,10 @@ export default function RegistrarBeneficiarioScreen() {
         .insert({
           name: beneficiaryName,
           tutor_name: tutorName,
+          curp: curp.toUpperCase(), // Guardamos la CURP
+          disability_type: disability, // Guardamos la discapacidad
           folio: autoFolio,
-          tutor_id: profile?.id || null, // Asignarlo al usuario logueado si aplica
+          tutor_id: profile?.id || null, 
           status: "pendiente"
         })
         .select()
@@ -108,12 +112,12 @@ export default function RegistrarBeneficiarioScreen() {
             name: doc.name,
             document_type: docType,
             status: "pendiente",
-            admin_comment: publicUrl, // Usamos temporalmente admin_comment o un campo de URL si lo agregaste a tu BD
+            admin_comment: publicUrl,
           });
         }
       }
 
-      Alert.alert("¡Registro Exitoso!", "El beneficiario y sus documentos han sido enviados a revisión.");
+      Alert.alert("¡Registro Exitoso!", "El beneficiario ha sido enviado a revisión.");
 
       // --- ENVÍO DE PUSH NOTIFICATIONS ---
       try {
@@ -173,7 +177,7 @@ export default function RegistrarBeneficiarioScreen() {
           <View style={styles.section}>
             <Text style={[styles.title, { color: colors.foreground }]}>Paso 1: Datos Básicos</Text>
             <Text style={{ color: colors.mutedForeground, marginBottom: 20 }}>
-              Proporciona los nombres para crear el expediente. La información médica y personal se extraerá de los documentos en el siguiente paso.
+              Proporciona la información principal para crear el expediente.
             </Text>
 
             <View style={styles.inputGroup}>
@@ -188,7 +192,20 @@ export default function RegistrarBeneficiarioScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Nombre completo del Padre o Tutor</Text>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>CURP del jugador(a)</Text>
+              <TextInput
+                style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
+                placeholder="18 caracteres"
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="characters"
+                maxLength={18}
+                value={curp}
+                onChangeText={setCurp}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Nombre del Padre o Tutor</Text>
               <TextInput
                 style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
                 placeholder="Ej. María García"
@@ -198,11 +215,36 @@ export default function RegistrarBeneficiarioScreen() {
               />
             </View>
 
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Tipo de Discapacidad</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                {DISABILITY_TYPES.map((type) => (
+                  <Pressable
+                    key={type}
+                    style={[
+                      styles.disabilityChip,
+                      {
+                        backgroundColor: disability === type ? colors.primary : colors.card,
+                        borderColor: disability === type ? colors.primary : colors.border,
+                      },
+                    ]}
+                    onPress={() => setDisability(type)}
+                  >
+                    <Text style={[styles.disabilityChipText, { color: disability === type ? "#FFFFFF" : colors.foreground }]}>
+                      {type}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+
             <Pressable 
               style={[styles.button, { backgroundColor: colors.primary, marginTop: 20 }]} 
               onPress={() => {
-                if (!beneficiaryName || !tutorName) {
-                  Alert.alert("Atención", "Llena ambos campos para continuar.");
+                if (!beneficiaryName || !tutorName || !curp) {
+                  Alert.alert("Atención", "Llena los campos obligatorios para continuar.");
+                } else if (curp.length !== 18) {
+                  Alert.alert("CURP Inválida", "La CURP debe tener 18 caracteres.");
                 } else {
                   setStep(2);
                 }
@@ -290,6 +332,8 @@ const styles = StyleSheet.create({
   inputGroup: { marginBottom: 16, gap: 8 },
   inputLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, height: 50, fontSize: 15, fontFamily: "Inter_400Regular" },
+  disabilityChip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10 },
+  disabilityChipText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   button: { height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   buttonText: { color: "#FFF", fontSize: 16, fontFamily: "Inter_700Bold" },
   infoBox: { flexDirection: "row", borderWidth: 1, borderRadius: 12, padding: 16, gap: 12, marginBottom: 20 },

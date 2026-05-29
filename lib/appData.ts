@@ -173,23 +173,15 @@ export const MUNICIPALITIES = [
   "El Marqués",
   "Corregidora",
   "San Juan del Río",
-  "Huimilpan",
-  "Pedro Escobedo",
-  "Cadereyta de Montes",
   "Tequisquiapan",
 ];
 
 export const ZONES = ["Norte", "Sur", "Este", "Oeste", "Centro"];
 
+// --- TIPOS DE DISCAPACIDAD LIMITADOS A 2 ---
 export const DISABILITY_TYPES = [
-  "Motriz",
-  "Auditiva",
-  "Visual",
+  "Síndrome de Down",
   "Intelectual",
-  "Comunicación",
-  "Múltiple",
-  "Psicosocial",
-  "Otra",
 ];
 
 export const SUPPORT_TYPES = [

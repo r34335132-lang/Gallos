@@ -8,7 +8,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
-import { REQUIRED_DOC_TYPES, DISABILITY_TYPES } from "@/lib/appData"; // <--- Importamos DISABILITY_TYPES
+// <--- NUEVO: Importamos MUNICIPALITIES
+import { REQUIRED_DOC_TYPES, DISABILITY_TYPES, MUNICIPALITIES } from "@/lib/appData"; 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 
 export default function RegistrarBeneficiarioScreen() {
@@ -21,8 +22,12 @@ export default function RegistrarBeneficiarioScreen() {
 
   const [beneficiaryName, setBeneficiaryName] = useState("");
   const [tutorName, setTutorName] = useState("");
-  const [curp, setCurp] = useState(""); // <--- Nuevo Estado CURP
-  const [disability, setDisability] = useState("Síndrome de Down"); // <--- Nuevo Estado Discapacidad
+  const [curp, setCurp] = useState("");
+  const [disability, setDisability] = useState("Síndrome de Down"); 
+  
+  // <--- NUEVO: Estado para el Municipio (por defecto seleccionamos el primero)
+  const [municipality, setMunicipality] = useState(MUNICIPALITIES[0]); 
+
   const [documents, setDocuments] = useState<Record<string, DocumentPicker.DocumentPickerResult>>({});
 
   const URL_DEL_PDF = "https://jfutdmtjcunkvefojlgm.supabase.co/storage/v1/object/public/img/documents/Gallos%20Smiling%20-%20Carta%20Responsiva.pdf"; 
@@ -90,8 +95,9 @@ export default function RegistrarBeneficiarioScreen() {
         .insert({
           name: beneficiaryName,
           tutor_name: tutorName,
-          curp: curp.toUpperCase(), // Guardamos la CURP
-          disability_type: disability, // Guardamos la discapacidad
+          curp: curp.toUpperCase(),
+          disability_type: disability,
+          municipality: municipality, // <--- NUEVO: Guardamos el municipio seleccionado
           folio: autoFolio,
           tutor_id: profile?.id || null, 
           status: "pendiente"
@@ -214,6 +220,31 @@ export default function RegistrarBeneficiarioScreen() {
                 onChangeText={setTutorName}
               />
             </View>
+
+            {/* <--- NUEVO: Selector de Municipio (Localidad) ---> */}
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Municipio / Localidad</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                {MUNICIPALITIES.map((mun) => (
+                  <Pressable
+                    key={mun}
+                    style={[
+                      styles.disabilityChip,
+                      {
+                        backgroundColor: municipality === mun ? colors.primary : colors.card,
+                        borderColor: municipality === mun ? colors.primary : colors.border,
+                      },
+                    ]}
+                    onPress={() => setMunicipality(mun)}
+                  >
+                    <Text style={[styles.disabilityChipText, { color: municipality === mun ? "#FFFFFF" : colors.foreground }]}>
+                      {mun}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+            {/* <---------------------------------------------> */}
 
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.foreground }]}>Tipo de Discapacidad</Text>

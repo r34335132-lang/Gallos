@@ -7,12 +7,16 @@ import {
   Text,
   TextInput,
   View,
+  Linking,
 } from "react-native";
 import { Link, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Feather } from "@expo/vector-icons"; // <-- Agregado para el icono del checkbox
 import { useColors } from "@/hooks/useColors";
 import { supabase } from "@/lib/supabase";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
+
+const PRIVACY_POLICY_URL = "https://bronze-homegrown-706.notion.site/Pol-ticas-de-Privacidad-Aplicaci-n-M-vil-Gallos-Smiling-36f621fdb42180088314d92c2fd39541";
 
 export default function Register() {
   const colors = useColors();
@@ -21,8 +25,17 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  
+  // <-- NUEVO: Estado para el Checkbox de privacidad
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const handleRegister = async () => {
+    // <-- NUEVO: Validación del checkbox de privacidad
+    if (!acceptedTerms) {
+      Alert.alert("Aviso de Privacidad", "Debes leer y aceptar el aviso de privacidad para poder registrarte.");
+      return;
+    }
+
     if (!name || !email || !password) {
       Alert.alert("Campos incompletos", "Por favor llena los campos obligatorios.");
       return;
@@ -116,6 +129,28 @@ export default function Register() {
             onChangeText={setPassword}
           />
 
+          {/* <-- NUEVO: Checkbox de Aviso de Privacidad --> */}
+          <Pressable 
+            style={styles.checkboxContainer} 
+            onPress={() => setAcceptedTerms(!acceptedTerms)}
+          >
+            <View style={[styles.checkbox, { borderColor: colors.border, backgroundColor: acceptedTerms ? colors.primary : "transparent" }]}>
+              {acceptedTerms && <Feather name="check" size={14} color="#FFF" />}
+            </View>
+            <Text style={[styles.checkboxText, { color: colors.foreground }]}>
+              He leído y acepto el{" "}
+              <Text 
+                style={[styles.linkText, { color: colors.primary }]}
+                onPress={(e) => {
+                  e.stopPropagation(); // Evita que se marque el checkbox al tocar el enlace
+                  Linking.openURL(PRIVACY_POLICY_URL);
+                }}
+              >
+                Aviso de Privacidad
+              </Text>
+            </Text>
+          </Pressable>
+
           <Pressable
             style={[styles.button, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
             onPress={handleRegister}
@@ -147,8 +182,14 @@ const styles = StyleSheet.create({
   form: { gap: 16 },
   label: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   input: { height: 50, borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, fontSize: 16 },
-  button: { height: 52, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 12 },
+  
+  // Estilos agregados para el Checkbox
+  checkboxContainer: { flexDirection: "row", alignItems: "center", marginTop: 4, marginBottom: 4 },
+  checkbox: { width: 22, height: 22, borderWidth: 1, borderRadius: 6, justifyContent: "center", alignItems: "center", marginRight: 10 },
+  checkboxText: { flex: 1, fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  
+  button: { height: 52, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 8 },
   buttonText: { color: "#FFF", fontSize: 16, fontFamily: "Inter_700Bold" },
   footerLink: { flexDirection: "row", justifyContent: "center", marginTop: 16 },
-  linkText: { fontFamily: "Inter_700Bold" },
+  linkText: { fontFamily: "Inter_700Bold", textDecorationLine: "underline" },
 });

@@ -74,8 +74,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="expedientes"
         options={{
-          title: "Expedientes",
-          tabBarIcon: ({ color }) => <Feather name="folder" size={22} color={color} />,
+          title: "Beneficiarios",
+          tabBarIcon: ({ color }) => <Feather name="users" size={22} color={color} />,
         }}
       />
       <Tabs.Screen

@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   Alert,
   Image,
@@ -41,6 +41,38 @@ export default function PerfilScreen() {
   // VERIFICAR SI EL USUARIO TIENE PERMISOS ADMINISTRATIVOS
   const role = profile?.role || "";
   const isInternal = ["admin", "capturista", "validador", "comunicacion"].includes(role);
+  const [docState, setDocState] = useState({
+    cartaResponsivaRecibida: false,
+    certificadoMedicoRecibido: false,
+  });
+
+  useEffect(() => {
+    const loadDocState = async () => {
+      if (profile?.role !== "tutor" || !profile.id) return;
+
+      const { data, error } = await supabase
+        .from("beneficiaries")
+        .select("carta_responsiva_recibida, certificado_medico_recibido")
+        .eq("tutor_id", profile.id);
+
+      if (error?.code === "PGRST204") {
+        setDocState({
+          cartaResponsivaRecibida: false,
+          certificadoMedicoRecibido: false,
+        });
+        return;
+      }
+
+      if (!error && data) {
+        setDocState({
+          cartaResponsivaRecibida: data.some((item) => Boolean(item.carta_responsiva_recibida)),
+          certificadoMedicoRecibido: data.some((item) => Boolean(item.certificado_medico_recibido)),
+        });
+      }
+    };
+
+    loadDocState();
+  }, [profile?.id, profile?.role]);
 
   const tutorItems = [
     { icon: "users" as const, label: "Mis beneficiarios", route: "/(tabs)/expedientes" },
@@ -53,7 +85,7 @@ export default function PerfilScreen() {
     { icon: "user-plus" as const, label: "Registrar beneficiario", route: "/(tabs)/registrar" },
     { icon: "file-text" as const, label: "Noticias", route: "/(tabs)/noticias" }, // Aunque no esté en el tab, pueden acceder desde aquí
     { icon: "bar-chart-2" as const, label: "Estadísticas", route: "/estadisticas" },
-    { icon: "users" as const, label: "Expedientes", route: "/(tabs)/expedientes" },
+    { icon: "users" as const, label: "Beneficiarios", route: "/(tabs)/expedientes" },
     { icon: "award" as const, label: "Patrocinadores", route: "/patrocinadores" },
     { icon: "bell" as const, label: "Notificaciones", route: "/notificaciones" },
   ];
@@ -122,9 +154,9 @@ export default function PerfilScreen() {
       <View style={[styles.profileCard, { backgroundColor: colors.primary }]}>
         <View style={styles.avatarWrap}>
           <Image
-            source={require("@/assets/images/logo.png")}
+            source={profile?.avatar ? { uri: profile.avatar } : require("@/assets/images/logo.png")}
             style={styles.logo}
-            resizeMode="contain"
+            resizeMode="cover"
           />
           <View style={[styles.roleTag, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
             <Text style={styles.roleTagText}>
@@ -141,6 +173,29 @@ export default function PerfilScreen() {
           <Text style={styles.profilePhone}>{profile.phone}</Text>
         )}
       </View>
+
+      {profile?.role === "tutor" && (
+        <View style={[styles.menuSection, { backgroundColor: colors.background, borderColor: colors.border }]}>
+          <View style={styles.docStatusHeader}>
+            <View style={[styles.menuIconWrap, { backgroundColor: "#05966912" }]}>
+              <Feather name="check-circle" size={18} color="#059669" />
+            </View>
+            <Text style={[styles.menuLabel, { color: colors.foreground }]}>Estado de Documentación</Text>
+          </View>
+          <View style={[styles.statusRow, { borderTopColor: colors.border }]}>
+            <Text style={[styles.statusLabel, { color: colors.mutedForeground }]}>Carta Responsiva</Text>
+            <Text style={[styles.statusValue, { color: docState.cartaResponsivaRecibida ? "#059669" : "#92400E" }]}>
+              {docState.cartaResponsivaRecibida ? "Recibida" : "Pendiente"}
+            </Text>
+          </View>
+          <View style={[styles.statusRow, { borderTopColor: colors.border }]}>
+            <Text style={[styles.statusLabel, { color: colors.mutedForeground }]}>Certificado Médico</Text>
+            <Text style={[styles.statusValue, { color: docState.certificadoMedicoRecibido ? "#059669" : "#92400E" }]}>
+              {docState.certificadoMedicoRecibido ? "Recibido" : "Pendiente"}
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Opciones del Menú */}
       <View style={[styles.menuSection, { backgroundColor: colors.background, borderColor: colors.border }]}>
@@ -181,7 +236,7 @@ export default function PerfilScreen() {
           <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
         </Pressable>
         
-        <Pressable style={styles.menuItem} onPress={openPrivacyPolicy}>
+        <Pressable style={styles.menuItem} onPress={() => router.push("/privacidad" as any)}>
           <View style={[styles.menuIconWrap, { backgroundColor: "#059669" + "12" }]}>
             <Feather name="shield" size={18} color="#059669" />
           </View>
@@ -295,6 +350,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: "Inter_500Medium",
   },
+  docStatusHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderTopWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  statusLabel: { flex: 1, fontSize: 14, fontFamily: "Inter_500Medium" },
+  statusValue: { fontSize: 14, fontFamily: "Inter_700Bold" },
   appInfo: { alignItems: "center", gap: 4 },
   appInfoText: { fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "center" },
   logoutButton: {

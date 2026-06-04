@@ -1,167 +1,144 @@
-import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator, Platform, ScrollView } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import * as DocumentPicker from "expo-document-picker";
-import * as Linking from "expo-linking";
+import * as ImagePicker from "expo-image-picker";
+import React, { useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { supabase } from "@/lib/supabase";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
-// <--- NUEVO: Importamos MUNICIPALITIES
-import { REQUIRED_DOC_TYPES, DISABILITY_TYPES, MUNICIPALITIES } from "@/lib/appData"; 
-import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
+import { MUNICIPALITIES } from "@/lib/appData";
+import { supabase } from "@/lib/supabase";
+
+const INTERNAL_ROLES = ["admin", "capturista", "validador", "comunicacion"];
 
 export default function RegistrarBeneficiarioScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { profile } = useAuth();
-  
-  const [step, setStep] = useState(1);
+  const isInternal = INTERNAL_ROLES.includes(profile?.role || "");
+
   const [loading, setLoading] = useState(false);
-
   const [beneficiaryName, setBeneficiaryName] = useState("");
-  const [tutorName, setTutorName] = useState("");
+  const [tutorName, setTutorName] = useState(profile?.role === "tutor" ? profile?.name || "" : "");
+  const [tutorEmail, setTutorEmail] = useState("");
   const [curp, setCurp] = useState("");
-  const [disability, setDisability] = useState("Síndrome de Down"); 
-  
-  // <--- NUEVO: Estado para el Municipio (por defecto seleccionamos el primero)
-  const [municipality, setMunicipality] = useState(MUNICIPALITIES[0]); 
+  const [municipality, setMunicipality] = useState(MUNICIPALITIES[0]);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
 
-  const [documents, setDocuments] = useState<Record<string, DocumentPicker.DocumentPickerResult>>({});
+  const pickBeneficiaryPhoto = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
 
-  const URL_DEL_PDF = "https://jfutdmtjcunkvefojlgm.supabase.co/storage/v1/object/public/img/documents/Gallos%20Smiling%20-%20Carta%20Responsiva.pdf"; 
-
-  const pickDocument = async (docType: string) => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["application/pdf", "image/*", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-        copyToCacheDirectory: true,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setDocuments(prev => ({ ...prev, [docType]: result }));
-      }
-    } catch (error) {
-      console.error("Error al seleccionar documento:", error);
+    if (!result.canceled && result.assets[0]?.uri) {
+      setPhotoUri(result.assets[0].uri);
     }
   };
 
-  const uploadFileToSupabase = async (fileUri: string, fileType: string, fileName: string) => {
-    try {
-      const fileExt = fileName.split(".").pop() || "pdf";
-      const storagePath = `documents/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+  const uploadImageToStorage = async (fileUri: string): Promise<string | null> => {
+    const fileExt = fileUri.split(".").pop() || "jpeg";
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const filePath = `beneficiaries/${fileName}`;
 
-      const formData = new FormData();
-      formData.append("file", {
-        uri: fileUri,
-        name: fileName,
-        type: fileType === "image" ? "image/jpeg" : "application/pdf",
-      } as any);
+    const formData = new FormData();
+    formData.append("file", {
+      uri: fileUri,
+      name: fileName,
+      type: `image/${fileExt === "jpg" ? "jpeg" : fileExt}`,
+    } as any);
 
-      const { error } = await supabase.storage.from("img").upload(storagePath, formData);
-      if (error) throw error;
+    const { error } = await supabase.storage.from("img").upload(filePath, formData);
+    if (error) throw error;
 
-      const { data } = supabase.storage.from("img").getPublicUrl(storagePath);
-      return data.publicUrl;
-    } catch (error) {
-      console.error("Error subiendo archivo:", error);
-      return null;
+    const { data } = supabase.storage.from("img").getPublicUrl(filePath);
+    return data.publicUrl;
+  };
+
+  const resolveTutor = async () => {
+    if (!isInternal) {
+      return { id: profile?.id || null, name: tutorName || profile?.name || "" };
     }
+
+    if (!tutorEmail.trim()) {
+      return { id: null, name: tutorName.trim() };
+    }
+
+    const { data, error } = await supabase
+      .from("users")
+      .select("id, name, email")
+      .eq("email", tutorEmail.trim().toLowerCase())
+      .maybeSingle();
+
+    if (error) throw error;
+    return {
+      id: data?.id || null,
+      name: data?.name || tutorName.trim(),
+    };
   };
 
   const handleSubmit = async () => {
-    if (!beneficiaryName || !tutorName || !curp) {
-      return Alert.alert("Faltan datos", "El nombre, el tutor y la CURP son obligatorios.");
+    if (!beneficiaryName.trim()) {
+      return Alert.alert("Faltan datos", "El nombre del beneficiario es obligatorio.");
     }
 
-    if (curp.length !== 18) {
-       return Alert.alert("CURP Inválida", "La CURP debe tener exactamente 18 caracteres.");
-    }
-
-    const missingDocs = REQUIRED_DOC_TYPES.filter(doc => !documents[doc]);
-    if (missingDocs.length > 0) {
-      return Alert.alert("Documentos incompletos", `Faltan subir los siguientes archivos:\n\n${missingDocs.join("\n")}`);
+    if (curp && curp.length !== 18) {
+      return Alert.alert("CURP inválida", "La CURP debe tener exactamente 18 caracteres.");
     }
 
     setLoading(true);
-
     try {
+      const tutor = await resolveTutor();
+      let photoUrl: string | null = null;
+
+      if (photoUri) {
+        photoUrl = await uploadImageToStorage(photoUri);
+      }
+
       const autoFolio = `GS-${Math.floor(100000 + Math.random() * 900000)}`;
+      const basePayload = {
+        name: beneficiaryName.trim(),
+        tutor_name: tutor.name || null,
+        tutor_id: tutor.id,
+        curp: curp.trim().toUpperCase() || null,
+        municipality,
+        folio: autoFolio,
+        photo_url: photoUrl,
+        status: "pendiente",
+      };
+      const payloadWithDocumentState = {
+        ...basePayload,
+        carta_responsiva_recibida: false,
+        certificado_medico_recibido: false,
+      };
 
-      // 2. Insertar Beneficiario
-      const { data: newBeneficiary, error: beneficiaryError } = await supabase
-        .from("beneficiaries")
-        .insert({
-          name: beneficiaryName,
-          tutor_name: tutorName,
-          curp: curp.toUpperCase(),
-          disability_type: disability,
-          municipality: municipality, // <--- NUEVO: Guardamos el municipio seleccionado
-          folio: autoFolio,
-          tutor_id: profile?.id || null, 
-          status: "pendiente"
-        })
-        .select()
-        .single();
-
-      if (beneficiaryError) throw beneficiaryError;
-
-      // 3. Subir Documentos e Insertar en Tabla Documents
-      for (const docType of REQUIRED_DOC_TYPES) {
-        const doc = documents[docType].assets![0];
-        const publicUrl = await uploadFileToSupabase(doc.uri, doc.mimeType || "application/pdf", doc.name);
-
-        if (publicUrl) {
-          await supabase.from("documents").insert({
-            beneficiary_id: newBeneficiary.id,
-            name: doc.name,
-            document_type: docType,
-            status: "pendiente",
-            admin_comment: publicUrl,
-          });
-        }
+      let { error } = await supabase.from("beneficiaries").insert(payloadWithDocumentState);
+      if (error?.code === "PGRST204") {
+        const retry = await supabase.from("beneficiaries").insert(basePayload);
+        error = retry.error;
       }
 
-      Alert.alert("¡Registro Exitoso!", "El beneficiario ha sido enviado a revisión.");
+      if (error) throw error;
 
-      // --- ENVÍO DE PUSH NOTIFICATIONS ---
-      try {
-        const { data: admins } = await supabase
-          .from('users')
-          .select('push_token')
-          .in('role', ['admin', 'validador', 'capturista'])
-          .not('push_token', 'is', null);
-
-        if (admins && admins.length > 0) {
-          const messages = admins.map(admin => ({
-            to: admin.push_token,
-            sound: 'default',
-            title: '¡Nuevo Beneficiario!',
-            body: `Se ha registrado una nueva solicitud a nombre de ${beneficiaryName}.`,
-            data: { route: '/(tabs)/expedientes' },
-          }));
-
-          await fetch('https://exp.host/--/api/v2/push/send', {
-            method: 'POST',
-            headers: {
-              Accept: 'application/json',
-              'Accept-encoding': 'gzip, deflate',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(messages),
-          });
-        }
-      } catch (e) {
-        console.log("Error enviando push notification", e);
-      }
-      // ------------------------------------
-
-      router.replace("/(tabs)/");
-
+      Alert.alert("Registro guardado", "El beneficiario fue registrado con seguimiento documental básico.");
+      router.replace("/(tabs)/expedientes");
     } catch (error: any) {
-      console.error("Error general:", error);
-      Alert.alert("Error", error.message || "Ocurrió un problema al guardar el registro.");
+      console.error("Error al guardar beneficiario:", error);
+      Alert.alert("Error", error.message || "No se pudo guardar el registro.");
     } finally {
       setLoading(false);
     }
@@ -173,179 +150,113 @@ export default function RegistrarBeneficiarioScreen() {
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Feather name="arrow-left" size={24} color="#FFF" />
         </Pressable>
-        <Text style={styles.headerTitle}>Registro Simplificado</Text>
+        <Text style={styles.headerTitle}>Registrar beneficiario</Text>
         <View style={{ width: 32 }} />
       </View>
 
       <KeyboardAwareScrollViewCompat contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}>
-        
-        {step === 1 && (
-          <View style={styles.section}>
-            <Text style={[styles.title, { color: colors.foreground }]}>Paso 1: Datos Básicos</Text>
-            <Text style={{ color: colors.mutedForeground, marginBottom: 20 }}>
-              Proporciona la información principal para crear el expediente.
-            </Text>
+        <View style={styles.section}>
+          <Text style={[styles.title, { color: colors.foreground }]}>Datos básicos</Text>
+          <Text style={[styles.helper, { color: colors.mutedForeground }]}>
+            Captura únicamente la información necesaria para identificar al beneficiario y dar seguimiento documental.
+          </Text>
 
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Nombre completo del jugador(a)</Text>
-              <TextInput
-                style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
-                placeholder="Ej. Juan Pérez García"
-                placeholderTextColor={colors.mutedForeground}
-                value={beneficiaryName}
-                onChangeText={setBeneficiaryName}
-              />
-            </View>
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.foreground }]}>Nombre del beneficiario *</Text>
+            <TextInput
+              style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
+              placeholder="Ej. Juan Pérez García"
+              placeholderTextColor={colors.mutedForeground}
+              value={beneficiaryName}
+              onChangeText={setBeneficiaryName}
+            />
+          </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.foreground }]}>CURP del jugador(a)</Text>
-              <TextInput
-                style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
-                placeholder="18 caracteres"
-                placeholderTextColor={colors.mutedForeground}
-                autoCapitalize="characters"
-                maxLength={18}
-                value={curp}
-                onChangeText={setCurp}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Nombre del Padre o Tutor</Text>
-              <TextInput
-                style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
-                placeholder="Ej. María García"
-                placeholderTextColor={colors.mutedForeground}
-                value={tutorName}
-                onChangeText={setTutorName}
-              />
-            </View>
-
-            {/* <--- NUEVO: Selector de Municipio (Localidad) ---> */}
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Municipio / Localidad</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
-                {MUNICIPALITIES.map((mun) => (
-                  <Pressable
-                    key={mun}
-                    style={[
-                      styles.disabilityChip,
-                      {
-                        backgroundColor: municipality === mun ? colors.primary : colors.card,
-                        borderColor: municipality === mun ? colors.primary : colors.border,
-                      },
-                    ]}
-                    onPress={() => setMunicipality(mun)}
-                  >
-                    <Text style={[styles.disabilityChipText, { color: municipality === mun ? "#FFFFFF" : colors.foreground }]}>
-                      {mun}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </View>
-            {/* <---------------------------------------------> */}
-
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Tipo de Discapacidad</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
-                {DISABILITY_TYPES.map((type) => (
-                  <Pressable
-                    key={type}
-                    style={[
-                      styles.disabilityChip,
-                      {
-                        backgroundColor: disability === type ? colors.primary : colors.card,
-                        borderColor: disability === type ? colors.primary : colors.border,
-                      },
-                    ]}
-                    onPress={() => setDisability(type)}
-                  >
-                    <Text style={[styles.disabilityChipText, { color: disability === type ? "#FFFFFF" : colors.foreground }]}>
-                      {type}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </View>
-
-            <Pressable 
-              style={[styles.button, { backgroundColor: colors.primary, marginTop: 20 }]} 
-              onPress={() => {
-                if (!beneficiaryName || !tutorName || !curp) {
-                  Alert.alert("Atención", "Llena los campos obligatorios para continuar.");
-                } else if (curp.length !== 18) {
-                  Alert.alert("CURP Inválida", "La CURP debe tener 18 caracteres.");
-                } else {
-                  setStep(2);
-                }
-              }}
-            >
-              <Text style={styles.buttonText}>Continuar a Documentos</Text>
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.foreground }]}>Fotografía de perfil</Text>
+            <Pressable style={[styles.photoBox, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={pickBeneficiaryPhoto}>
+              {photoUri ? (
+                <Image source={{ uri: photoUri }} style={styles.photoPreview} />
+              ) : (
+                <>
+                  <Feather name="camera" size={28} color={colors.mutedForeground} />
+                  <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>Seleccionar fotografía</Text>
+                </>
+              )}
             </Pressable>
           </View>
-        )}
 
-        {step === 2 && (
-          <View style={styles.section}>
-            <Text style={[styles.title, { color: colors.foreground }]}>Paso 2: Documentación</Text>
-            
-            <View style={[styles.infoBox, { backgroundColor: colors.primary + "10", borderColor: colors.primary + "30" }]}>
-              <Feather name="download" size={20} color={colors.primary} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.infoTitle, { color: colors.primary }]}>Formatos Requeridos</Text>
-                <Text style={[styles.infoText, { color: colors.foreground }]}>
-                  Descarga la Carta Responsiva y de Uso de Imagen. Llénala, fírmala y súbela en la lista de abajo junto con los demás documentos.
-                </Text>
-                <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                  <Pressable 
-                    style={[styles.downloadBtn, { backgroundColor: '#EF4444' }]} 
-                    onPress={() => Linking.openURL(URL_DEL_PDF)}
-                  >
-                    <Feather name="file-text" size={16} color="#FFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.downloadBtnText}>Descargar Formato (PDF)</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-
-            <Text style={[styles.subtitle, { color: colors.foreground, marginTop: 10 }]}>Sube tus archivos (PDF o Imagen)</Text>
-            
-            <View style={styles.docList}>
-              {REQUIRED_DOC_TYPES.map((docType) => {
-                const hasFile = !!documents[docType];
-                return (
-                  <View key={docType} style={[styles.docItem, { borderColor: hasFile ? colors.primary : colors.border }]}>
-                    <View style={styles.docIcon}>
-                      <Feather name={hasFile ? "check-circle" : "file-text"} size={20} color={hasFile ? colors.primary : colors.mutedForeground} />
-                    </View>
-                    <View style={styles.docInfo}>
-                      <Text style={[styles.docName, { color: hasFile ? colors.foreground : colors.mutedForeground }]}>{docType} *</Text>
-                      {hasFile && <Text style={[styles.docSub, { color: colors.primary }]} numberOfLines={1}>{documents[docType].assets![0].name}</Text>}
-                    </View>
-                    <Pressable
-                      style={[styles.uploadBtn, { backgroundColor: hasFile ? colors.background : colors.primary, borderColor: colors.primary, borderWidth: hasFile ? 1 : 0 }]}
-                      onPress={() => pickDocument(docType)}
-                    >
-                      <Text style={[styles.uploadBtnText, { color: hasFile ? colors.primary : "#FFF" }]}>{hasFile ? "Cambiar" : "Subir"}</Text>
-                    </Pressable>
-                  </View>
-                );
-              })}
-            </View>
-
-            <View style={{ flexDirection: "row", gap: 12, marginTop: 20 }}>
-              <Pressable style={[styles.button, { backgroundColor: colors.muted, flex: 1 }]} onPress={() => setStep(1)} disabled={loading}>
-                <Text style={[styles.buttonText, { color: colors.foreground }]}>Atrás</Text>
-              </Pressable>
-              
-              <Pressable style={[styles.button, { backgroundColor: colors.primary, flex: 2, opacity: loading ? 0.7 : 1 }]} onPress={handleSubmit} disabled={loading}>
-                {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Finalizar Registro</Text>}
-              </Pressable>
-            </View>
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.foreground }]}>CURP</Text>
+            <TextInput
+              style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
+              placeholder="Opcional, 18 caracteres"
+              placeholderTextColor={colors.mutedForeground}
+              autoCapitalize="characters"
+              maxLength={18}
+              value={curp}
+              onChangeText={setCurp}
+            />
           </View>
-        )}
 
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.foreground }]}>Municipio / Localidad</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+              {MUNICIPALITIES.map((mun) => (
+                <Pressable
+                  key={mun}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: municipality === mun ? colors.primary : colors.card,
+                      borderColor: municipality === mun ? colors.primary : colors.border,
+                    },
+                  ]}
+                  onPress={() => setMunicipality(mun)}
+                >
+                  <Text style={[styles.chipText, { color: municipality === mun ? "#FFFFFF" : colors.foreground }]}>{mun}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.foreground }]}>Nombre del tutor</Text>
+            <TextInput
+              style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
+              placeholder="Ej. María García"
+              placeholderTextColor={colors.mutedForeground}
+              value={tutorName}
+              onChangeText={setTutorName}
+            />
+          </View>
+
+          {isInternal && (
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Correo del tutor para asignación</Text>
+              <TextInput
+                style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
+                placeholder="tutor@correo.com"
+                placeholderTextColor={colors.mutedForeground}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={tutorEmail}
+                onChangeText={setTutorEmail}
+              />
+            </View>
+          )}
+
+          <View style={[styles.infoBox, { borderColor: colors.border, backgroundColor: colors.muted }]}>
+            <Feather name="file-text" size={18} color={colors.primary} />
+            <Text style={[styles.infoText, { color: colors.foreground }]}>
+              Los documentos no se suben desde la aplicación. La administración marcará únicamente si la carta responsiva y el certificado médico fueron recibidos.
+            </Text>
+          </View>
+
+          <Pressable style={[styles.button, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]} onPress={handleSubmit} disabled={loading}>
+            {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Guardar beneficiario</Text>}
+          </Pressable>
+        </View>
       </KeyboardAwareScrollViewCompat>
     </View>
   );
@@ -357,27 +268,18 @@ const styles = StyleSheet.create({
   backBtn: { padding: 4 },
   headerTitle: { color: "#FFFFFF", fontSize: 18, fontFamily: "Inter_700Bold" },
   scroll: { padding: 20 },
-  section: { flex: 1 },
-  title: { fontSize: 22, fontFamily: "Inter_700Bold", marginBottom: 8 },
-  subtitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", marginBottom: 12 },
-  inputGroup: { marginBottom: 16, gap: 8 },
+  section: { flex: 1, gap: 16 },
+  title: { fontSize: 22, fontFamily: "Inter_700Bold" },
+  helper: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 21 },
+  inputGroup: { gap: 8 },
   inputLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, height: 50, fontSize: 15, fontFamily: "Inter_400Regular" },
-  disabilityChip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10 },
-  disabilityChipText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  button: { height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  chip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10 },
+  chipText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  photoBox: { height: 160, borderWidth: 1, borderStyle: "dashed", borderRadius: 12, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  photoPreview: { width: "100%", height: "100%", resizeMode: "cover" },
+  infoBox: { flexDirection: "row", gap: 10, borderWidth: 1, borderRadius: 12, padding: 12, alignItems: "flex-start" },
+  infoText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  button: { height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center", marginTop: 8 },
   buttonText: { color: "#FFF", fontSize: 16, fontFamily: "Inter_700Bold" },
-  infoBox: { flexDirection: "row", borderWidth: 1, borderRadius: 12, padding: 16, gap: 12, marginBottom: 20 },
-  infoTitle: { fontSize: 15, fontFamily: "Inter_700Bold", marginBottom: 4 },
-  infoText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20 },
-  downloadBtn: { flex: 1, flexDirection: 'row', paddingVertical: 12, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  downloadBtnText: { color: "#FFF", fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  docList: { gap: 12 },
-  docItem: { flexDirection: "row", alignItems: "center", padding: 12, borderWidth: 1, borderRadius: 12, gap: 12 },
-  docIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(0,0,0,0.05)", alignItems: "center", justifyContent: "center" },
-  docInfo: { flex: 1 },
-  docName: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  docSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
-  uploadBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-  uploadBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
 });

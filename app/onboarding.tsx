@@ -27,8 +27,8 @@ const SLIDES = [
   },
   {
     id: "2",
-    title: "Expedientes digitales",
-    body: "Registra beneficiarios, sube documentos y da seguimiento a cada solicitud.",
+    title: "Seguimiento institucional",
+    body: "Registra beneficiarios, consulta noticias y da seguimiento básico de documentación.",
     icon: "📋",
     accent: "#1A4FA8",
   },

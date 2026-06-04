@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, Image, Pressable } from "react-native";
+import { View, Text, StyleSheet, Image, Linking, Pressable } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColors } from "@/hooks/useColors";
@@ -13,12 +13,17 @@ export default function SponsorCard({ sponsor }: Props) {
   const colors = useColors();
   const isGold = sponsor.level === "Oro";
   const isSilver = sponsor.level === "Plata";
+  const openWebsite = () => {
+    if (sponsor.website) Linking.openURL(sponsor.website);
+  };
 
   // --- TARJETA ORO (PREMIUM Y GRANDE) ---
   if (isGold) {
     return (
-      <View style={[styles.cardContainer, { height: 220 }]}>
+      <Pressable style={[styles.cardContainer, { height: sponsor.promoImage ? 260 : 220 }]} onPress={openWebsite} disabled={!sponsor.website}>
         <LinearGradient colors={["#F59E0B", "#B45309"]} style={styles.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+          {sponsor.promoImage ? <Image source={{ uri: sponsor.promoImage }} style={styles.promoBg} resizeMode="cover" /> : null}
+          {sponsor.promoImage ? <View style={styles.promoScrim} /> : null}
           <View style={styles.goldBadge}>
             <Feather name="star" size={12} color="#FFF" style={{ marginRight: 4 }} />
             <Text style={styles.goldBadgeText}>PATROCINADOR ORO</Text>
@@ -36,16 +41,17 @@ export default function SponsorCard({ sponsor }: Props) {
             {sponsor.description ? (
               <Text style={styles.goldDesc} numberOfLines={2}>{sponsor.description}</Text>
             ) : null}
+            {sponsor.website ? <Text style={styles.websiteText}>Visitar sitio</Text> : null}
           </View>
         </LinearGradient>
-      </View>
+      </Pressable>
     );
   }
 
   // --- TARJETA PLATA (MEDIANA) ---
   if (isSilver) {
     return (
-      <View style={[styles.cardContainer, { height: 120 }]}>
+      <Pressable style={[styles.cardContainer, { height: 120 }]} onPress={openWebsite} disabled={!sponsor.website}>
         <LinearGradient colors={["#9CA3AF", "#4B5563"]} style={styles.gradientRow} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
           <View style={[styles.logoContainerMd, { backgroundColor: "#FFF" }]}>
             {sponsor.logo ? (
@@ -60,15 +66,16 @@ export default function SponsorCard({ sponsor }: Props) {
             {sponsor.description ? (
               <Text style={styles.silverDesc} numberOfLines={2}>{sponsor.description}</Text>
             ) : null}
+            {sponsor.website ? <Text style={styles.websiteText}>Visitar sitio</Text> : null}
           </View>
         </LinearGradient>
-      </View>
+      </Pressable>
     );
   }
 
   // --- TARJETAS BRONCE / BENEFACTOR (NORMALES) ---
   return (
-    <View style={[styles.standardCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+    <Pressable style={[styles.standardCard, { backgroundColor: colors.background, borderColor: colors.border }]} onPress={openWebsite} disabled={!sponsor.website}>
       <View style={[styles.logoContainerSm, { backgroundColor: colors.primary + "12" }]}>
         {sponsor.logo ? (
           <Image source={{ uri: sponsor.logo }} style={styles.logoImg} resizeMode="cover" />
@@ -82,8 +89,9 @@ export default function SponsorCard({ sponsor }: Props) {
         {sponsor.description ? (
           <Text style={[styles.standardDesc, { color: colors.mutedForeground }]} numberOfLines={2}>{sponsor.description}</Text>
         ) : null}
+        {sponsor.website ? <Text style={[styles.standardWebsite, { color: colors.primary }]}>Visitar sitio</Text> : null}
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -91,6 +99,8 @@ const styles = StyleSheet.create({
   cardContainer: { borderRadius: 16, overflow: "hidden", marginBottom: 12, elevation: 4, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6 },
   gradient: { flex: 1, padding: 16, justifyContent: "center", alignItems: "center" },
   gradientRow: { flex: 1, padding: 16, flexDirection: "row", alignItems: "center", gap: 16 },
+  promoBg: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
+  promoScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.35)" },
   
   // GOLD
   goldBadge: { position: "absolute", top: 12, right: 16, backgroundColor: "rgba(0,0,0,0.3)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, flexDirection: "row", alignItems: "center" },
@@ -99,6 +109,7 @@ const styles = StyleSheet.create({
   logoContainerLg: { width: 90, height: 90, borderRadius: 45, alignItems: "center", justifyContent: "center", marginBottom: 12, overflow: "hidden", padding: 4, elevation: 5 },
   goldTitle: { color: "#FFF", fontSize: 22, fontFamily: "Inter_700Bold", textAlign: "center", marginBottom: 4 },
   goldDesc: { color: "rgba(255,255,255,0.9)", fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center", paddingHorizontal: 20 },
+  websiteText: { color: "#FFF", fontSize: 12, fontFamily: "Inter_700Bold", marginTop: 6, textDecorationLine: "underline" },
   
   // SILVER
   logoContainerMd: { width: 70, height: 70, borderRadius: 35, alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 4, elevation: 3 },
@@ -114,6 +125,7 @@ const styles = StyleSheet.create({
   standardTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", marginBottom: 2 },
   standardLevel: { fontSize: 12, fontFamily: "Inter_600SemiBold", marginBottom: 2 },
   standardDesc: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 16 },
+  standardWebsite: { fontSize: 12, fontFamily: "Inter_700Bold", marginTop: 4 },
   
   logoImg: { width: "100%", height: "100%", borderRadius: 100 },
 });

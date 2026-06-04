@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Linking,
+  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -18,135 +18,74 @@ import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { supabase } from "@/lib/supabase";
 
-export default function ExpedienteDetailScreen() {
+export default function BeneficiaryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  
-  // Perfil para saber si es admin o no
   const { profile } = useAuth();
-  const canValidateDocuments = profile?.role === "admin" || profile?.role === "validador";
-  const canChangeBeneficiaryStatus = profile?.role === "admin" || profile?.role === "validador";
+  const canAdminister = ["admin", "capturista", "validador"].includes(profile?.role || "");
 
-  const [b, setBeneficiary] = useState<any>(null);
-  const [docs, setDocs] = useState<any[]>([]);
+  const [beneficiary, setBeneficiary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Cargar datos reales de Supabase
-  const fetchExpediente = async () => {
+  const fetchBeneficiary = async () => {
     try {
       setLoading(true);
-      
-      // 1. Obtener Beneficiario
-      const { data: benefData, error: benefError } = await supabase
-        .from("beneficiaries")
-        .select("*")
-        .eq("id", id)
-        .single();
-
-      if (benefError) throw benefError;
-
-      // 2. Obtener Documentos
-      const { data: docsData, error: docsError } = await supabase
-        .from("documents")
-        .select("*")
-        .eq("beneficiary_id", id);
-
-      if (docsError) throw docsError;
-
-      setBeneficiary(benefData);
-      setDocs(docsData || []);
+      const { data, error } = await supabase.from("beneficiaries").select("*").eq("id", id).single();
+      if (error) throw error;
+      setBeneficiary(data);
     } catch (error) {
-      console.error("Error fetching expediente:", error);
+      console.error("Error cargando beneficiario:", error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (id) fetchExpediente();
+    if (id) fetchBeneficiary();
   }, [id]);
 
-  // Actualizar el Estatus General del Beneficiario
-  const changeStatus = async (newStatus: string) => {
-    Alert.alert(
-      "Confirmar",
-      `¿Estás seguro de cambiar el estatus a ${newStatus}?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        { 
-          text: "Confirmar", 
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from("beneficiaries")
-                .update({ status: newStatus })
-                .eq("id", id);
-                
-              if (error) throw error;
-              
-              Alert.alert("Éxito", "El estatus ha sido actualizado.");
-              fetchExpediente(); // Recargamos para ver los cambios
-            } catch (error) {
-              Alert.alert("Error", "No se pudo actualizar el estatus.");
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  // Actualizar estatus de un documento individual
-  const updateDocStatus = async (docId: string, status: string, docName: string) => {
-    Alert.alert(
-      "Confirmar",
-      `¿Marcar "${docName}" como ${status.replace("_", " ")}?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Confirmar",
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from("documents")
-                .update({ status })
-                .eq("id", docId);
-
-              if (error) throw error;
-              fetchExpediente(); // Recargar para ver el badge actualizado
-            } catch (e) {
-              Alert.alert("Error", "No se pudo actualizar el estatus del documento.");
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  // Abrir el documento (Guardamos la URL temporalmente en admin_comment)
-  const openDocument = (url: string) => {
-    if (url && url.startsWith("http")) {
-      Linking.openURL(url);
-    } else {
-      Alert.alert("Aviso", "No hay un archivo válido vinculado a este documento.");
+  const updateBeneficiary = async (payload: Record<string, boolean | string>) => {
+    try {
+      const { error } = await supabase.from("beneficiaries").update(payload).eq("id", id);
+      if (error) throw error;
+      await fetchBeneficiary();
+    } catch (error: any) {
+      if (error?.code === "PGRST204") {
+        Alert.alert(
+          "Migración pendiente",
+          "La base de datos aún no tiene los campos de estado documental. Aplica la migración 202606040001_privacy_app_store_cleanup.sql y vuelve a intentar."
+        );
+        return;
+      }
+      Alert.alert("Error", "No se pudo actualizar el beneficiario.");
     }
+  };
+
+  const confirmStatus = (status: string) => {
+    Alert.alert("Confirmar", `¿Cambiar el estatus a ${status}?`, [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Confirmar", onPress: () => updateBeneficiary({ status }) },
+    ]);
+  };
+
+  const toggleDocument = (field: "carta_responsiva_recibida" | "certificado_medico_recibido", value: boolean) => {
+    updateBeneficiary({ [field]: value });
   };
 
   if (loading) {
     return (
       <View style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={{ color: colors.mutedForeground, marginTop: 10 }}>Cargando expediente...</Text>
+        <Text style={{ color: colors.mutedForeground, marginTop: 10 }}>Cargando beneficiario...</Text>
       </View>
     );
   }
 
-  if (!b && !loading) {
+  if (!beneficiary) {
     return (
       <View style={[styles.notFound, { backgroundColor: colors.background }]}>
-        <Text style={[styles.notFoundText, { color: colors.foreground }]}>
-          Expediente no encontrado
-        </Text>
+        <Text style={[styles.notFoundText, { color: colors.foreground }]}>Beneficiario no encontrado</Text>
         <Pressable onPress={() => router.back()}>
           <Text style={{ color: colors.primary, marginTop: 10 }}>Regresar</Text>
         </Pressable>
@@ -156,7 +95,6 @@ export default function ExpedienteDetailScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
       <View
         style={[
           styles.header,
@@ -169,148 +107,122 @@ export default function ExpedienteDetailScreen() {
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Feather name="arrow-left" size={22} color="#FFFFFF" />
         </Pressable>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          Expediente
-        </Text>
+        <Text style={styles.headerTitle} numberOfLines={1}>Beneficiario</Text>
         <View style={{ width: 22 }} />
       </View>
 
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: 40 + insets.bottom }]}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Identity Card */}
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: 40 + insets.bottom }]} showsVerticalScrollIndicator={false}>
         <View style={[styles.identityCard, { backgroundColor: colors.primary + "10", borderColor: colors.primary + "20" }]}>
-          <View style={[styles.avatarLg, { backgroundColor: colors.primary + "20" }]}>
-            <Feather name="user" size={36} color={colors.primary} />
-          </View>
+          {beneficiary.photo_url ? (
+            <Image source={{ uri: beneficiary.photo_url }} style={styles.avatarImage} />
+          ) : (
+            <View style={[styles.avatarLg, { backgroundColor: colors.primary + "20" }]}>
+              <Feather name="user" size={36} color={colors.primary} />
+            </View>
+          )}
           <View style={styles.identityInfo}>
-            <Text style={[styles.benefName, { color: colors.foreground }]}>{b.name}</Text>
-            <Text style={[styles.folioText, { color: colors.primary }]}>Folio: {b.folio}</Text>
+            <Text style={[styles.benefName, { color: colors.foreground }]}>{beneficiary.name}</Text>
+            {canAdminister && <Text style={[styles.folioText, { color: colors.primary }]}>Folio: {beneficiary.folio || "Sin folio"}</Text>}
             <View style={{ marginTop: 4 }}>
-              <StatusBadge status={b.status} />
+              <StatusBadge status={beneficiary.status || "pendiente"} />
             </View>
           </View>
         </View>
 
-        {/* Info Básica */}
-        <View style={[styles.section, { borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Información General</Text>
-          
-          <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Tutor o Responsable</Text>
-            <Text style={[styles.infoValue, { color: colors.foreground }]}>{b.tutor_name || "No registrado"}</Text>
-          </View>
-
-          <View style={[styles.infoRow, { borderBottomColor: "transparent" }]}>
-            <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Fecha de registro</Text>
-            <Text style={[styles.infoValue, { color: colors.foreground }]}>
-              {b.registration_date || b.created_at?.split("T")[0] || "Desconocida"}
-            </Text>
-          </View>
-        </View>
-
-        {/* Documents */}
-        <View style={[styles.section, { borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Documentación Anexa</Text>
-          {docs.length === 0 ? (
-            <Text style={[styles.emptyDocs, { color: colors.mutedForeground }]}>
-              No hay documentos registrados.
-            </Text>
-          ) : (
-            docs.map((doc, index) => (
-              <View 
-                key={doc.id} 
-                style={[
-                  styles.docRow, 
-                  { borderBottomColor: colors.border },
-                  index === docs.length - 1 && { borderBottomWidth: 0 } // Quitar línea al último elemento
-                ]}
-              >
-                <View style={[styles.docIconWrap, { backgroundColor: colors.primary + "15" }]}>
-                  <Feather name="file-text" size={16} color={colors.primary} />
-                </View>
-                
-                <View style={styles.docInfo}>
-                  <Text style={[styles.docName, { color: colors.foreground }]}>{doc.name}</Text>
-                  
-                  <View style={{ alignSelf: "flex-start", marginTop: 4 }}>
-                    <StatusBadge status={doc.status} small />
-                  </View>
-
-                  {/* Acciones de Administrador por Documento */}
-                  {canValidateDocuments && (
-                    <View style={styles.docAdminActions}>
-                      <Pressable 
-                        style={[styles.miniBtn, { backgroundColor: colors.success }]} 
-                        onPress={() => updateDocStatus(doc.id, "validado", doc.name)}
-                      >
-                        <Feather name="check" size={12} color="#FFFFFF" />
-                        <Text style={styles.miniBtnText}>Validar</Text>
-                      </Pressable>
-                      
-                      <Pressable 
-                        style={[styles.miniBtn, { backgroundColor: colors.destructive }]} 
-                        onPress={() => updateDocStatus(doc.id, "requiere_correccion", doc.name)}
-                      >
-                        <Feather name="refresh-cw" size={12} color="#FFFFFF" />
-                        <Text style={styles.miniBtnText}>Corregir</Text>
-                      </Pressable>
-                    </View>
-                  )}
-                </View>
-
-                {/* Botón para ver el documento */}
-                <Pressable 
-                  style={styles.actionBtn} 
-                  onPress={() => openDocument(doc.admin_comment)} // Usamos admin_comment como URL
-                >
-                  <Feather name="eye" size={20} color={colors.primary} />
-                </Pressable>
-              </View>
-            ))
-          )}
-        </View>
-
-        {/* Admin Actions Globales del Expediente */}
-        {canChangeBeneficiaryStatus && (
+        {canAdminister && (
           <View style={[styles.section, { borderColor: colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Resolución del Expediente</Text>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Información administrativa</Text>
+            <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Tutor asignado</Text>
+              <Text style={[styles.infoValue, { color: colors.foreground }]}>{beneficiary.tutor_name || "No registrado"}</Text>
+            </View>
+            <View style={[styles.infoRow, { borderBottomColor: "transparent" }]}>
+              <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Fecha de registro</Text>
+              <Text style={[styles.infoValue, { color: colors.foreground }]}>
+                {beneficiary.registration_date || beneficiary.created_at?.split("T")[0] || "Desconocida"}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        <View style={[styles.section, { borderColor: colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Estado de Documentación</Text>
+          <DocumentStateRow
+            label="Carta Responsiva"
+            value={Boolean(beneficiary.carta_responsiva_recibida)}
+            editable={canAdminister}
+            onChange={(value) => toggleDocument("carta_responsiva_recibida", value)}
+          />
+          <DocumentStateRow
+            label="Certificado Médico"
+            value={Boolean(beneficiary.certificado_medico_recibido)}
+            editable={canAdminister}
+            onChange={(value) => toggleDocument("certificado_medico_recibido", value)}
+          />
+        </View>
+
+        {canAdminister && (
+          <View style={[styles.section, { borderColor: colors.border }]}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Estatus del beneficiario</Text>
             <View style={styles.adminButtons}>
-              <Pressable
-                style={[styles.adminBtn, { backgroundColor: colors.success }]}
-                onPress={() => changeStatus("aprobado")}
-              >
+              <Pressable style={[styles.adminBtn, { backgroundColor: colors.success }]} onPress={() => confirmStatus("aprobado")}>
                 <Feather name="check" size={16} color="#FFFFFF" />
                 <Text style={styles.adminBtnText}>Aprobar</Text>
               </Pressable>
-              
-              <Pressable
-                style={[styles.adminBtn, { backgroundColor: colors.destructive }]}
-                onPress={() => changeStatus("rechazado")}
-              >
+              <Pressable style={[styles.adminBtn, { backgroundColor: colors.destructive }]} onPress={() => confirmStatus("rechazado")}>
                 <Feather name="x" size={16} color="#FFFFFF" />
                 <Text style={styles.adminBtnText}>Rechazar</Text>
               </Pressable>
-              
-              <Pressable
-                style={[styles.adminBtn, { backgroundColor: colors.warning }]}
-                onPress={() => changeStatus("en_revision")}
-              >
+              <Pressable style={[styles.adminBtn, { backgroundColor: colors.warning }]} onPress={() => confirmStatus("en_revision")}>
                 <Feather name="edit-2" size={16} color="#FFFFFF" />
-                <Text style={styles.adminBtnText}>En Revisión</Text>
+                <Text style={styles.adminBtnText}>En revisión</Text>
               </Pressable>
             </View>
-            
-            {b.notes && (
-              <View style={[styles.notesCard, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-                <Text style={[styles.notesLabel, { color: colors.mutedForeground }]}>Observaciones internas</Text>
-                <Text style={[styles.notesText, { color: colors.foreground }]}>{b.notes}</Text>
-              </View>
-            )}
           </View>
         )}
       </ScrollView>
+    </View>
+  );
+}
+
+function DocumentStateRow({
+  label,
+  value,
+  editable,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  editable: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  const colors = useColors();
+  return (
+    <View style={[styles.docStateRow, { borderTopColor: colors.border }]}>
+      <View style={styles.docStateText}>
+        <Text style={[styles.infoValue, { color: colors.foreground }]}>{label}</Text>
+        <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>
+          {value ? "Recibido" : "Pendiente"}
+        </Text>
+      </View>
+      {editable ? (
+        <View style={styles.toggleGroup}>
+          <Pressable
+            style={[styles.toggleBtn, { backgroundColor: value ? "#059669" : colors.muted, borderColor: value ? "#059669" : colors.border }]}
+            onPress={() => onChange(true)}
+          >
+            <Text style={[styles.toggleText, { color: value ? "#FFFFFF" : colors.foreground }]}>Sí</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.toggleBtn, { backgroundColor: !value ? "#92400E" : colors.muted, borderColor: !value ? "#92400E" : colors.border }]}
+            onPress={() => onChange(false)}
+          >
+            <Text style={[styles.toggleText, { color: !value ? "#FFFFFF" : colors.foreground }]}>No</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Text style={[styles.stateValue, { color: value ? "#059669" : "#92400E" }]}>{value ? "Recibido" : "Pendiente"}</Text>
+      )}
     </View>
   );
 }
@@ -320,111 +232,28 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   notFound: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   notFoundText: { fontSize: 18, fontFamily: "Inter_600SemiBold" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 16 },
   backBtn: { padding: 4 },
-  headerTitle: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontFamily: "Inter_700Bold",
-    flex: 1,
-    textAlign: "center",
-  },
+  headerTitle: { color: "#FFFFFF", fontSize: 18, fontFamily: "Inter_700Bold", flex: 1, textAlign: "center" },
   scroll: { paddingHorizontal: 20, paddingTop: 20, gap: 16 },
-  identityCard: {
-    flexDirection: "row",
-    gap: 16,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    alignItems: "center",
-  },
-  avatarLg: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  identityCard: { flexDirection: "row", gap: 16, padding: 16, borderRadius: 16, borderWidth: 1, alignItems: "center" },
+  avatarLg: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
+  avatarImage: { width: 72, height: 72, borderRadius: 36, backgroundColor: "#E5E7EB" },
   identityInfo: { flex: 1, gap: 4 },
   benefName: { fontSize: 18, fontFamily: "Inter_700Bold" },
   folioText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  section: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 16,
-    gap: 0,
-    overflow: "hidden",
-  },
+  section: { borderRadius: 14, borderWidth: 1, padding: 16, gap: 0, overflow: "hidden" },
   sectionTitle: { fontSize: 16, fontFamily: "Inter_700Bold", marginBottom: 12 },
-  infoRow: {
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    gap: 4,
-  },
+  infoRow: { paddingVertical: 10, borderBottomWidth: 1, gap: 4 },
   infoLabel: { fontSize: 12, fontFamily: "Inter_400Regular" },
   infoValue: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  emptyDocs: { fontSize: 14, fontFamily: "Inter_400Regular" },
-  docRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  docIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  docInfo: { flex: 1, gap: 6 },
-  docName: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  docAdminActions: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 6,
-  },
-  miniBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  miniBtnText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-  },
-  actionBtn: { 
-    padding: 10,
-    alignSelf: "center", 
-  },
-  adminButtons: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 12 },
-  adminBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
+  docStateRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, paddingVertical: 12, gap: 12 },
+  docStateText: { flex: 1, gap: 2 },
+  stateValue: { fontSize: 13, fontFamily: "Inter_700Bold" },
+  toggleGroup: { flexDirection: "row", gap: 8 },
+  toggleBtn: { minWidth: 48, alignItems: "center", borderWidth: 1, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 7 },
+  toggleText: { fontSize: 12, fontFamily: "Inter_700Bold" },
+  adminButtons: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  adminBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
   adminBtnText: { color: "#FFFFFF", fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  notesCard: {
-    padding: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    gap: 6,
-  },
-  notesLabel: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  notesText: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 22 },
 });

@@ -130,15 +130,6 @@ export default function EstadisticasScreen() {
     return buildChart(Object.entries(counts).map(([label, value]) => ({ label, value })));
   }, [beneficiaries]);
 
-  const byDisability = useMemo(() => {
-    const counts = beneficiaries.reduce<Record<string, number>>((acc, item) => {
-      const key = item.disabilityType || "Sin dato";
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
-    return buildChart(Object.entries(counts).map(([label, value]) => ({ label, value })));
-  }, [beneficiaries]);
-
   const byStatus = useMemo(() => {
     const labels: Record<string, string> = {
       activo: "Activo",
@@ -187,7 +178,7 @@ export default function EstadisticasScreen() {
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Métricas generales</Text>
             <View style={styles.grid}>
               <StatsCard label="Total beneficiarios" value={stats.totalBeneficiaries} icon="users" color={colors.primary} />
-              <StatsCard label="Expedientes activos" value={stats.activeRecords} icon="folder" color="#059669" />
+              <StatsCard label="Beneficiarios activos" value={stats.activeRecords} icon="users" color="#059669" />
             </View>
             <View style={styles.grid}>
               <StatsCard label="Apoyos entregados" value={stats.supportDelivered} icon="gift" color="#7C3AED" />
@@ -205,12 +196,7 @@ export default function EstadisticasScreen() {
           </View>
 
           <View style={[styles.chartCard, { backgroundColor: colors.background, borderColor: colors.border, shadowColor: colors.foreground }]}>
-            <Text style={[styles.chartTitle, { color: colors.foreground }]}>Por tipo de discapacidad</Text>
-            <BarChart data={byDisability} colors={colors} />
-          </View>
-
-          <View style={[styles.chartCard, { backgroundColor: colors.background, borderColor: colors.border, shadowColor: colors.foreground }]}>
-            <Text style={[styles.chartTitle, { color: colors.foreground }]}>Por estado del expediente</Text>
+            <Text style={[styles.chartTitle, { color: colors.foreground }]}>Por estado del beneficiario</Text>
             <BarChart data={byStatus} colors={colors} />
           </View>
 

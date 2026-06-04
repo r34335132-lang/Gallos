@@ -36,7 +36,7 @@ const HERO_IMAGE_URL = "https://jfutdmtjcunkvefojlgm.supabase.co/storage/v1/obje
 
 const QUICK_ACTIONS = [
   { label: "Noticias", icon: "file-text" as const, route: "/(tabs)/noticias", color: "#1A4FA8" },
-  { label: "Expedientes", icon: "folder" as const, route: "/(tabs)/expedientes", color: "#059669" },
+  { label: "Beneficiarios", icon: "users" as const, route: "/(tabs)/expedientes", color: "#059669" },
   { label: "Documentos", icon: "paperclip" as const, route: "/documentos", color: "#7C3AED" },
   { label: "Patrocinadores", icon: "award" as const, route: "/patrocinadores", color: "#D97706" },
   { label: "Estadísticas", icon: "bar-chart-2" as const, route: "/estadisticas", color: "#0891B2" },
@@ -261,7 +261,7 @@ export default function HomeScreen() {
       {/* Tagline */}
       <View style={[styles.taglineCard, { backgroundColor: colors.primary }]}>
         <Text style={styles.taglineText}>
-          "Cada expediente representa una historia."
+          "Cada beneficiario representa una historia."
         </Text>
         <Text style={styles.taglineSub}>
           Juntos impulsamos el futuro de nuestros beneficiarios.

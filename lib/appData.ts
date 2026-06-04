@@ -76,6 +76,20 @@ export interface Sponsor {
   beneficiaries: number;
   startDate: string;
   logo?: string | null;
+  promoImage?: string | null;
+  website?: string | null;
+}
+
+export type GalleryMediaType = "imagen" | "video";
+
+export interface GalleryItem {
+  id: string;
+  title: string;
+  description: string;
+  type: GalleryMediaType;
+  mediaUrl: string;
+  thumbnailUrl?: string | null;
+  tournamentName?: string | null;
 }
 
 export type BeneficiaryStatus =
@@ -100,8 +114,6 @@ export interface Beneficiary {
   address: string;
   school: string;
   gradeLevel: string;
-  disabilityType: string;
-  diagnosis: string;
   needs: string;
   status: BeneficiaryStatus;
   tutorId: string | null;
@@ -110,6 +122,8 @@ export interface Beneficiary {
   photo?: string | null;
   supportType: string;
   notes?: string | null;
+  cartaResponsivaRecibida: boolean;
+  certificadoMedicoRecibido: boolean;
 }
 
 export type DocStatus =
@@ -128,7 +142,6 @@ export interface AppDocument {
   type: string;
   status: DocStatus;
   uploadDate?: string | null;
-  adminComment?: string | null;
 }
 
 export interface Stats {
@@ -180,33 +193,28 @@ export const ZONES = ["Norte", "Sur", "Este", "Oeste", "Centro"];
 
 // --- TIPOS DE DISCAPACIDAD LIMITADOS A 2 ---
 export const DISABILITY_TYPES = [
-  "Síndrome de Down",
-  "Intelectual",
+  "Actividad deportiva",
+  "Programa institucional",
 ];
 
 export const SUPPORT_TYPES = [
-  "Equipo médico",
+  "Equipo deportivo",
   "Auxiliar auditivo",
   "Material educativo",
   "Terapia",
   "Apoyo económico",
   "Apoyo en especie",
-  "Apoyo médico",
+  "Acompañamiento",
   "Terapia y equipo",
   "Apoyo educativo",
 ];
 
 export const REQUIRED_DOC_TYPES = [
-  "Firma carta responsiva",
-  "Carta de uso de imagen",
-  "Acta de nacimiento",
-  "Certificado médico",
-  "Identificación papá o tutor",
-  "Comprobante domicilio",
-  "Foto del hijo/hija"
+  "Carta Responsiva",
+  "Certificado Médico",
 ];
 
-export const CONSENT_DOCUMENTS = [] as const;
+export const CONSENT_DOCUMENTS: any[] = [];
 
 export const ALL_DOC_TYPES = [
   ...REQUIRED_DOC_TYPES
@@ -268,6 +276,21 @@ export function mapSponsor(row: any): Sponsor {
     beneficiaries: Number(row.beneficiaries ?? row.beneficiary_count ?? 0),
     startDate: row.startDate ?? row.start_date ?? formatDisplayDate(row.created_at),
     logo: row.logo_url ?? row.logo ?? null,
+    promoImage: row.promo_image_url ?? row.promo_image ?? null,
+    website: row.website ?? row.site_url ?? null,
+  };
+}
+
+export function mapGalleryItem(row: any): GalleryItem {
+  const type = row.type === "video" || row.media_type === "video" ? "video" : "imagen";
+  return {
+    id: String(row.id),
+    title: row.title ?? "Galería",
+    description: row.description ?? "",
+    type,
+    mediaUrl: row.media_url ?? row.video_url ?? row.image_url ?? "",
+    thumbnailUrl: row.thumbnail_url ?? row.image_url ?? null,
+    tournamentName: row.tournaments?.name ?? row.tournament_name ?? null,
   };
 }
 
@@ -285,8 +308,6 @@ export function mapBeneficiary(row: any): Beneficiary {
     address: row.address ?? "",
     school: row.school ?? "",
     gradeLevel: row.gradeLevel ?? row.grade_level ?? "",
-    disabilityType: row.disabilityType ?? row.disability_type ?? "",
-    diagnosis: row.diagnosis ?? "",
     needs: row.needs ?? "",
     status: row.status ?? "pendiente",
     tutorId: row.tutorId ?? row.tutor_id ?? null,
@@ -295,6 +316,8 @@ export function mapBeneficiary(row: any): Beneficiary {
     photo: row.photo ?? row.photo_url ?? null,
     supportType: row.supportType ?? row.support_type ?? "",
     notes: row.notes ?? null,
+    cartaResponsivaRecibida: Boolean(row.carta_responsiva_recibida ?? row.responsiva_received ?? false),
+    certificadoMedicoRecibido: Boolean(row.certificado_medico_recibido ?? row.medical_certificate_received ?? false),
   };
 }
 
@@ -306,7 +329,6 @@ export function mapDocument(row: any): AppDocument {
     type: row.type ?? row.document_type ?? row.name ?? "",
     status: row.status ?? "pendiente",
     uploadDate: row.uploadDate ?? row.upload_date ?? null,
-    adminComment: row.adminComment ?? row.admin_comment ?? null,
   };
 }
 

@@ -30,9 +30,9 @@ import { supabase, supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 
 const ADMIN_SECTIONS = [
   { icon: "user-plus" as const, label: "Registrar beneficiario", desc: "Capturar una nueva solicitud en base de datos", route: "/(tabs)/registrar", color: "#059669" },
-  { icon: "folder" as const, label: "Expedientes", desc: "Gestionar expedientes y beneficiarios", route: "/(tabs)/expedientes", color: "#1A4FA8" },
+  { icon: "users" as const, label: "Beneficiarios", desc: "Gestionar beneficiarios y estados documentales", route: "/(tabs)/expedientes", color: "#1A4FA8" },
   { icon: "file-text" as const, label: "Noticias Publicadas", desc: "Ver todas las noticias", route: "/(tabs)/noticias", color: "#059669" },
-  { icon: "image" as const, label: "Galería Pública", desc: "Ver fotos publicadas", route: "/galeria", color: "#EC4899" },
+  { icon: "image" as const, label: "Galería Pública", desc: "Ver fotos y videos publicados", route: "/galeria", color: "#EC4899" },
   { icon: "award" as const, label: "Patrocinadores", desc: "Administrar patrocinadores", route: "/patrocinadores", color: "#D97706" },
   { icon: "bar-chart-2" as const, label: "Estadísticas", desc: "Ver reportes y métricas", route: "/estadisticas", color: "#7C3AED" },
 ];
@@ -97,6 +97,8 @@ export default function AdminScreen() {
   const [originalGalleryMapping, setOriginalGalleryMapping] = useState<Record<string, string>>({});
   const [photoTitle, setPhotoTitle] = useState("");
   const [photoDesc, setPhotoDesc] = useState("");
+  const [galleryType, setGalleryType] = useState<"imagen" | "video">("imagen");
+  const [videoUrl, setVideoUrl] = useState("");
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
 
   // Estados para Patrocinadores
@@ -107,6 +109,8 @@ export default function AdminScreen() {
   const [sponsorDesc, setSponsorDesc] = useState("");
   const [sponsorContact, setSponsorContact] = useState("");
   const [sponsorLogo, setSponsorLogo] = useState<string | null>(null);
+  const [sponsorWebsite, setSponsorWebsite] = useState("");
+  const [sponsorPromoImage, setSponsorPromoImage] = useState<string | null>(null);
 
   // Estados para Usuarios
   const [staffName, setStaffName] = useState("");
@@ -191,13 +195,38 @@ export default function AdminScreen() {
     }
   };
 
-  const pickImage = async (type: "news" | "gallery" | "sponsor") => {
+  const uploadMediaToStorage = async (fileUri: string): Promise<string | null> => {
+    try {
+      const fileExt = fileUri.split(".").pop() || (galleryType === "video" ? "mp4" : "jpeg");
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `uploads/${fileName}`;
+      const isVideo = ["mp4", "mov", "m4v", "webm"].includes(fileExt.toLowerCase());
+
+      const formData = new FormData();
+      formData.append("file", {
+        uri: fileUri,
+        name: fileName,
+        type: isVideo ? `video/${fileExt === "mov" ? "quicktime" : fileExt}` : `image/${fileExt === "jpg" ? "jpeg" : fileExt}`,
+      } as any);
+
+      const { error } = await supabase.storage.from("img").upload(filePath, formData);
+      if (error) throw error;
+
+      const { data } = supabase.storage.from("img").getPublicUrl(filePath);
+      return data.publicUrl;
+    } catch (error) {
+      console.error("Error subiendo multimedia:", error);
+      return null;
+    }
+  };
+
+  const pickImage = async (type: "news" | "gallery" | "sponsor" | "sponsorPromo") => {
     const isGallery = type === "gallery";
     
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: type === "gallery" && galleryType === "video" ? ["videos"] : ["images"],
       allowsEditing: !isGallery, 
-      allowsMultipleSelection: isGallery, 
+      allowsMultipleSelection: isGallery && galleryType === "imagen", 
       quality: 0.8,
     });
 
@@ -209,6 +238,8 @@ export default function AdminScreen() {
         setGalleryImages(prev => [...prev, ...newUris]);
       } else if (type === "sponsor") {
         setSponsorLogo(result.assets[0].uri);
+      } else if (type === "sponsorPromo") {
+        setSponsorPromoImage(result.assets[0].uri);
       }
     }
   };
@@ -234,11 +265,15 @@ export default function AdminScreen() {
       setEditingGalleryId(item.title);
       setPhotoTitle(item.title || "");
       setPhotoDesc(data[0]?.description || "");
-      setGalleryImages(data.map((d: any) => d.image_url));
+      const firstType = data[0]?.type === "video" || data[0]?.media_type === "video" ? "video" : "imagen";
+      setGalleryType(firstType);
+      setVideoUrl(firstType === "video" ? data[0]?.video_url || data[0]?.media_url || "" : "");
+      setGalleryImages(data.map((d: any) => d.media_url || d.video_url || d.image_url).filter(Boolean));
 
       const mapping: Record<string, string> = {};
       data.forEach((d: any) => {
-        if (d.image_url) mapping[d.image_url] = d.id;
+        const mediaUrl = d.media_url || d.video_url || d.image_url;
+        if (mediaUrl) mapping[mediaUrl] = d.id;
       });
       setOriginalGalleryMapping(mapping);
     }
@@ -252,6 +287,8 @@ export default function AdminScreen() {
     setSponsorDesc(item.description || "");
     setSponsorContact(item.contact_name || "");
     setSponsorLogo(item.logo_url || null);
+    setSponsorWebsite(item.website || "");
+    setSponsorPromoImage(item.promo_image_url || null);
   };
 
   const handlePublishNews = async () => {
@@ -298,14 +335,41 @@ export default function AdminScreen() {
   };
 
   const handleUploadPhoto = async () => {
-    if (!canPublishContent) return Alert.alert("Sin permisos", "Tu rol no puede subir fotos.");
-    if (!photoTitle) return Alert.alert("Falta Título", "El título es obligatorio para agrupar el álbum.");
-    if (galleryImages.length === 0) return Alert.alert("Faltan Imágenes", "Selecciona al menos una fotografía.");
+    if (!canPublishContent) return Alert.alert("Sin permisos", "Tu rol no puede subir multimedia.");
+    if (!photoTitle) return Alert.alert("Falta título", "El título es obligatorio.");
+    if (galleryType === "imagen" && galleryImages.length === 0) return Alert.alert("Faltan imágenes", "Selecciona al menos una fotografía.");
+    if (galleryType === "video" && galleryImages.length === 0 && !videoUrl.trim()) return Alert.alert("Falta video", "Agrega una URL o selecciona un archivo de video.");
     
     setUploading(true);
     let successCount = 0;
 
-    if (editingGalleryId) {
+    if (galleryType === "video") {
+      const mediaUrl = videoUrl.trim() || (galleryImages[0]?.startsWith("http") ? galleryImages[0] : galleryImages[0] ? await uploadMediaToStorage(galleryImages[0]) : null);
+      if (!mediaUrl) {
+        setUploading(false);
+        return Alert.alert("Error", "No se pudo preparar el video.");
+      }
+
+      const payload = {
+        title: photoTitle,
+        description: photoDesc,
+        type: "video",
+        media_url: mediaUrl,
+        video_url: mediaUrl,
+        image_url: null,
+      };
+
+      if (editingGalleryId) {
+        const ids = Object.values(originalGalleryMapping);
+        if (ids.length > 0) {
+          await supabase.from("gallery_photos").update(payload).in("id", ids);
+          successCount = ids.length;
+        }
+      } else {
+        const { error } = await supabase.from("gallery_photos").insert(payload);
+        if (!error) successCount = 1;
+      }
+    } else if (editingGalleryId) {
       const keptUrls = galleryImages.filter(uri => uri.startsWith("http"));
       const newUris = galleryImages.filter(uri => !uri.startsWith("http"));
       const originalUrls = Object.keys(originalGalleryMapping);
@@ -323,17 +387,17 @@ export default function AdminScreen() {
       }
 
       for (const uri of newUris) {
-        const publicUrl = await uploadImageToStorage(uri);
+        const publicUrl = await uploadMediaToStorage(uri);
         if (publicUrl) {
-          const { error } = await supabase.from("gallery_photos").insert({ title: photoTitle, description: photoDesc, image_url: publicUrl });
+          const { error } = await supabase.from("gallery_photos").insert({ title: photoTitle, description: photoDesc, type: "imagen", media_url: publicUrl, image_url: publicUrl });
           if (!error) successCount++;
         }
       }
     } else {
       for (const uri of galleryImages) {
-        const publicUrl = await uploadImageToStorage(uri);
+        const publicUrl = await uploadMediaToStorage(uri);
         if (publicUrl) {
-          const { error } = await supabase.from("gallery_photos").insert({ title: photoTitle, description: photoDesc, image_url: publicUrl });
+          const { error } = await supabase.from("gallery_photos").insert({ title: photoTitle, description: photoDesc, type: "imagen", media_url: publicUrl, image_url: publicUrl });
           if (!error) successCount++;
         }
       }
@@ -341,9 +405,9 @@ export default function AdminScreen() {
 
     setUploading(false);
     if (successCount > 0) {
-      Alert.alert("Éxito", editingGalleryId ? "Galería actualizada." : `Se guardaron ${successCount} fotos.`);
+      Alert.alert("Éxito", editingGalleryId ? "Galería actualizada." : `Se guardaron ${successCount} elemento(s).`);
       setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]); 
-      setEditingGalleryId(null); setOriginalGalleryMapping({});
+      setVideoUrl(""); setGalleryType("imagen"); setEditingGalleryId(null); setOriginalGalleryMapping({});
       loadAdminContent();
     } else {
       Alert.alert("Error", "No se pudieron guardar las imágenes.");
@@ -356,6 +420,7 @@ export default function AdminScreen() {
     
     setUploading(true);
     let publicUrl = sponsorLogo;
+    let promoUrl = sponsorPromoImage;
 
     if (sponsorLogo && !sponsorLogo.startsWith("http")) {
       const uploadedUrl = await uploadImageToStorage(sponsorLogo);
@@ -366,12 +431,23 @@ export default function AdminScreen() {
       publicUrl = uploadedUrl;
     }
 
+    if (sponsorPromoImage && !sponsorPromoImage.startsWith("http")) {
+      const uploadedUrl = await uploadImageToStorage(sponsorPromoImage);
+      if (!uploadedUrl) {
+        setUploading(false);
+        return Alert.alert("Error", "No se pudo subir la imagen promocional.");
+      }
+      promoUrl = uploadedUrl;
+    }
+
     const payload = {
       name: sponsorName,
       level: sponsorLevel,
       description: sponsorDesc,
       contact_name: sponsorContact,
       logo_url: publicUrl,
+      website: sponsorWebsite.trim() || null,
+      promo_image_url: promoUrl,
     };
 
     let error;
@@ -386,7 +462,7 @@ export default function AdminScreen() {
     setUploading(false);
     if (!error) {
       Alert.alert("Éxito", editingSponsorId ? "Patrocinador actualizado." : "Patrocinador registrado.");
-      setSponsorName(""); setSponsorDesc(""); setSponsorContact(""); setSponsorLogo(null); setEditingSponsorId(null);
+      setSponsorName(""); setSponsorDesc(""); setSponsorContact(""); setSponsorLogo(null); setSponsorWebsite(""); setSponsorPromoImage(null); setEditingSponsorId(null);
       loadAdminContent();
     } else {
       console.log(error);
@@ -581,15 +657,15 @@ export default function AdminScreen() {
           </View>
         )}
 
-        {/* ================= TAB 3: FOTOS ================= */}
+        {/* ================= TAB 3: GALERIA ================= */}
         {activeTab === "photos" && canPublishContent && (
           <View style={styles.formSection}>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-              {editingGalleryId ? "Editar Álbum: " + editingGalleryId : "Crear Nuevo Álbum en Galería"}
+              {editingGalleryId ? "Editar multimedia: " + editingGalleryId : "Crear elemento multimedia"}
             </Text>
             
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Título del Álbum</Text>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Título</Text>
               <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} placeholder="Ej. Torneo de Verano" placeholderTextColor={colors.mutedForeground} value={photoTitle} onChangeText={setPhotoTitle} />
             </View>
 
@@ -599,50 +675,110 @@ export default function AdminScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Fotografías en este álbum ({galleryImages.length})</Text>
-              
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Tipo</Text>
+              <View style={styles.roleGrid}>
+                {(["imagen", "video"] as const).map((type) => (
+                  <Pressable
+                    key={type}
+                    style={[
+                      styles.roleChip,
+                      {
+                        backgroundColor: galleryType === type ? colors.primary : colors.card,
+                        borderColor: galleryType === type ? colors.primary : colors.border,
+                      },
+                    ]}
+                    onPress={() => {
+                      setGalleryType(type);
+                      setGalleryImages([]);
+                      setVideoUrl("");
+                    }}
+                  >
+                    <Text style={[styles.roleChipText, { color: galleryType === type ? "#FFFFFF" : colors.foreground }]}>
+                      {type === "imagen" ? "Imagen" : "Video"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {galleryType === "video" && (
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.foreground }]}>URL de YouTube o externa</Text>
+                <TextInput
+                  style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
+                  placeholder="https://..."
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="url"
+                  autoCapitalize="none"
+                  value={videoUrl}
+                  onChangeText={setVideoUrl}
+                />
+              </View>
+            )}
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>
+                {galleryType === "imagen" ? `Fotografías (${galleryImages.length})` : "Archivo de video"}
+              </Text>
+
               {galleryImages.length > 0 ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 4 }}>
                   {galleryImages.map((uri, index) => (
                     <View key={index} style={styles.thumbnailContainer}>
-                      <Image source={{ uri }} style={styles.thumbnailImage} />
+                      {galleryType === "imagen" ? (
+                        <Image source={{ uri }} style={styles.thumbnailImage} />
+                      ) : (
+                        <View style={[styles.thumbnailImage, { backgroundColor: colors.primary + "15", alignItems: "center", justifyContent: "center" }]}>
+                          <Feather name="play-circle" size={26} color={colors.primary} />
+                        </View>
+                      )}
                       <Pressable style={styles.removeBadge} onPress={() => removeGalleryImage(index)}>
                         <Feather name="x" size={14} color="#FFF" />
                       </Pressable>
                     </View>
                   ))}
                   
-                  <Pressable style={[styles.addMoreBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => pickImage("gallery")}>
+                  {galleryType === "imagen" && (
+                    <Pressable style={[styles.addMoreBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => pickImage("gallery")}>
                     <Feather name="plus" size={24} color={colors.mutedForeground} />
                     <Text style={{ fontSize: 12, color: colors.mutedForeground, marginTop: 4 }}>Añadir más</Text>
-                  </Pressable>
+                    </Pressable>
+                  )}
                 </ScrollView>
               ) : (
                 <Pressable style={[styles.imageBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => pickImage("gallery")}>
-                  <Feather name="image" size={32} color={colors.mutedForeground} />
-                  <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>Tocar para seleccionar fotos</Text>
+                  <Feather name={galleryType === "imagen" ? "image" : "video"} size={32} color={colors.mutedForeground} />
+                  <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>
+                    {galleryType === "imagen" ? "Tocar para seleccionar fotos" : "Tocar para seleccionar video"}
+                  </Text>
                 </Pressable>
               )}
             </View>
 
             <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} onPress={handleUploadPhoto} disabled={uploading}>
-              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{editingGalleryId ? "Actualizar Álbum" : `Publicar ${galleryImages.length > 0 ? galleryImages.length : ""} Fotos`}</Text>}
+              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{editingGalleryId ? "Actualizar" : "Publicar"}</Text>}
             </Pressable>
 
             {editingGalleryId && (
-              <Pressable style={{ alignItems: "center", marginTop: 10 }} onPress={() => { setEditingGalleryId(null); setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]); setOriginalGalleryMapping({}); }}>
+              <Pressable style={{ alignItems: "center", marginTop: 10 }} onPress={() => { setEditingGalleryId(null); setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]); setVideoUrl(""); setGalleryType("imagen"); setOriginalGalleryMapping({}); }}>
                 <Text style={{ color: colors.primary }}>Cancelar edición</Text>
               </Pressable>
             )}
 
             <View style={styles.listContainer}>
-              <Text style={[styles.inputLabel, { color: colors.foreground, marginTop: 10 }]}>Álbumes Recientes</Text>
+              <Text style={[styles.inputLabel, { color: colors.foreground, marginTop: 10 }]}>Multimedia reciente</Text>
               {recentPhotos.map((item, i) => (
                 <Pressable key={i} style={[styles.listItem, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => selectGalleryForEdit(item)}>
-                  <Image source={{ uri: item.image_url }} style={styles.listImg} />
+                  {item.type === "video" || item.media_type === "video" ? (
+                    <View style={[styles.listImg, { alignItems: "center", justifyContent: "center", backgroundColor: colors.primary + "15" }]}>
+                      <Feather name="play-circle" size={20} color={colors.primary} />
+                    </View>
+                  ) : (
+                    <Image source={{ uri: item.image_url || item.media_url }} style={styles.listImg} />
+                  )}
                   <View style={styles.listInfo}>
                     <Text style={[styles.listTitle, { color: colors.foreground }]} numberOfLines={1}>{item.title}</Text>
-                    <Text style={[styles.listDate, { color: colors.mutedForeground }]}>{item.description || 'Sin descripción'}</Text>
+                    <Text style={[styles.listDate, { color: colors.mutedForeground }]}>{item.type === "video" || item.media_type === "video" ? "Video" : "Foto"} · {item.description || 'Sin descripción'}</Text>
                   </View>
                   <View style={[styles.editIconBtn, { backgroundColor: colors.primary + "15" }]}>
                     <Feather name="edit-2" size={16} color={colors.primary} />
@@ -704,6 +840,19 @@ export default function AdminScreen() {
             </View>
 
             <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Sitio web</Text>
+              <TextInput
+                style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
+                placeholder="https://empresa.com"
+                placeholderTextColor={colors.mutedForeground}
+                keyboardType="url"
+                autoCapitalize="none"
+                value={sponsorWebsite}
+                onChangeText={setSponsorWebsite}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.foreground }]}>Leyenda o Descripción</Text>
               <TextInput 
                 style={[styles.inputArea, { color: colors.foreground, borderColor: colors.border, height: 80 }]} 
@@ -733,6 +882,23 @@ export default function AdminScreen() {
               </Pressable>
             </View>
 
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Imagen promocional</Text>
+              <Pressable
+                style={[styles.imageBtn, { borderColor: colors.border, backgroundColor: colors.card, height: 140 }]}
+                onPress={() => pickImage("sponsorPromo")}
+              >
+                {sponsorPromoImage ? (
+                  <Image source={{ uri: sponsorPromoImage }} style={styles.previewImage} resizeMode="cover" />
+                ) : (
+                  <>
+                    <Feather name="image" size={32} color={colors.mutedForeground} />
+                    <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>Tocar para subir imagen promocional</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+
             <Pressable 
               style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} 
               onPress={handleSaveSponsor} 
@@ -742,7 +908,7 @@ export default function AdminScreen() {
             </Pressable>
 
             {editingSponsorId && (
-              <Pressable style={{ alignItems: "center", marginTop: 10 }} onPress={() => { setEditingSponsorId(null); setSponsorName(""); setSponsorDesc(""); setSponsorContact(""); setSponsorLogo(null); }}>
+              <Pressable style={{ alignItems: "center", marginTop: 10 }} onPress={() => { setEditingSponsorId(null); setSponsorName(""); setSponsorDesc(""); setSponsorContact(""); setSponsorLogo(null); setSponsorWebsite(""); setSponsorPromoImage(null); }}>
                 <Text style={{ color: colors.primary }}>Cancelar edición</Text>
               </Pressable>
             )}

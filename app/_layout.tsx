@@ -36,6 +36,7 @@ function RootLayoutNav() {
       <Stack.Screen name="consentimiento/[type]" />
       <Stack.Screen name="expediente/[id]" />
       <Stack.Screen name="documentos" />
+      <Stack.Screen name="privacidad" />
       <Stack.Screen name="admin" />
       <Stack.Screen name="estadisticas" />
       <Stack.Screen name="notificaciones" />

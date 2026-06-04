@@ -1,10 +1,10 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { StatusBadge } from "./StatusBadge";
 import { useColors } from "@/hooks/useColors";
 import type { Beneficiary } from "@/lib/appData";
-import { StatusBadge } from "./StatusBadge";
 
 interface Props {
   beneficiary: Beneficiary;
@@ -26,23 +26,22 @@ export function BeneficiaryCard({ beneficiary: b }: Props) {
       ]}
       onPress={() => router.push(`/expediente/${b.id}`)}
     >
-      <View
-        style={[styles.avatar, { backgroundColor: colors.primary + "18" }]}
-      >
-        <Feather name="user" size={22} color={colors.primary} />
-      </View>
+      {b.photo ? (
+        <Image source={{ uri: b.photo }} style={styles.avatarImage} />
+      ) : (
+        <View style={[styles.avatar, { backgroundColor: colors.primary + "18" }]}>
+          <Feather name="user" size={22} color={colors.primary} />
+        </View>
+      )}
       <View style={styles.info}>
-        <Text
-          style={[styles.name, { color: colors.foreground }]}
-          numberOfLines={1}
-        >
+        <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={1}>
           {b.name}
         </Text>
         <Text style={[styles.meta, { color: colors.mutedForeground }]}>
-          {b.age} años · {b.municipality} · {b.disabilityType}
+          {b.municipality || "Sin municipio registrado"}
         </Text>
         <Text style={[styles.folio, { color: colors.mutedForeground }]}>
-          Folio: {b.folio}
+          Folio: {b.folio || "Sin folio"}
         </Text>
         <View style={styles.row}>
           <StatusBadge status={b.status} small />
@@ -73,6 +72,12 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
+  },
+  avatarImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#E5E7EB",
   },
   info: {
     flex: 1,

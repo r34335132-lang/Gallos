@@ -4,196 +4,125 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Linking,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as DocumentPicker from "expo-document-picker";
-
-import { StatusBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
-import { ALL_DOC_TYPES, getConsentByNameOrType } from "@/lib/appData";
 import { supabase } from "@/lib/supabase";
 
+const RESPONSIVE_LETTER_URL =
+  "https://jfutdmtjcunkvefojlgm.supabase.co/storage/v1/object/public/img/documents/Gallos%20Smiling%20-%20Carta%20Responsiva.pdf";
+const MEDICAL_CERTIFICATE_FORMAT_URL =
+  "https://jfutdmtjcunkvefojlgm.supabase.co/storage/v1/object/public/img/documents/Gallos%20Smiling%20-%20Formato%20Certificado%20Medico.pdf";
+const WHATSAPP_URL = "https://wa.me/524421234567?text=Hola%20Gallos%20Smiling%2C%20quiero%20enviar%20documentos%20para%20revision.";
+
+type BeneficiaryDocState = {
+  id: string;
+  name: string;
+  carta_responsiva_recibida?: boolean | null;
+  certificado_medico_recibido?: boolean | null;
+};
+
+function receivedLabel(value?: boolean | null) {
+  return value ? "Recibida" : "Pendiente";
+}
+
 export default function DocumentosScreen() {
-  // Recibimos el ID del beneficiario desde la ruta anterior, si existe.
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
   const routeBeneficiaryId = Array.isArray(id) ? id[0] : id;
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  
   const { profile } = useAuth();
-  const canValidateDocuments = profile?.role === "admin" || profile?.role === "validador";
 
-  const [docs, setDocs] = useState<any[]>([]);
-  const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
-  const [selectedBeneficiaryId, setSelectedBeneficiaryId] = useState<string | null>(null);
+  const [beneficiaries, setBeneficiaries] = useState<BeneficiaryDocState[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const activeBeneficiaryId = routeBeneficiaryId || selectedBeneficiaryId;
-
-  const fetchDocs = async () => {
-    if (!activeBeneficiaryId) {
-      setDocs([]);
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
-    try {
-      const { data, error } = await supabase
-        .from("documents")
-        .select("*")
-        .eq("beneficiary_id", activeBeneficiaryId);
-
-      if (error) throw error;
-      setDocs(data || []);
-    } catch (error) {
-      console.error("Error cargando documentos:", error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
 
   useEffect(() => {
-    fetchDocs();
-  }, [activeBeneficiaryId]);
-
-  useEffect(() => {
-    const fetchTutorBeneficiaries = async () => {
-      if (routeBeneficiaryId || profile?.role !== "tutor") return;
+    const loadBeneficiaries = async () => {
+      if (!profile) return;
 
       try {
         setLoading(true);
-        const { data, error } = await supabase
+        let query = supabase
           .from("beneficiaries")
-          .select("id, name, folio")
-          .eq("tutor_id", profile.id)
+          .select("id, name, carta_responsiva_recibida, certificado_medico_recibido")
           .order("created_at", { ascending: false });
 
-        if (error) throw error;
+        if (routeBeneficiaryId) {
+          query = query.eq("id", routeBeneficiaryId);
+        } else if (profile.role === "tutor") {
+          query = query.eq("tutor_id", profile.id);
+        }
 
-        const rows = data || [];
-        setBeneficiaries(rows);
-        setSelectedBeneficiaryId((current) => current || rows[0]?.id || null);
-        if (rows.length === 0) setLoading(false);
+        const { data, error } = await query;
+        if (error?.code === "PGRST204") {
+          let fallbackQuery = supabase
+            .from("beneficiaries")
+            .select("id, name")
+            .order("created_at", { ascending: false });
+
+          if (routeBeneficiaryId) {
+            fallbackQuery = fallbackQuery.eq("id", routeBeneficiaryId);
+          } else if (profile.role === "tutor") {
+            fallbackQuery = fallbackQuery.eq("tutor_id", profile.id);
+          }
+
+          const fallback = await fallbackQuery;
+          if (fallback.error) throw fallback.error;
+          setBeneficiaries((fallback.data || []).map((item) => ({
+            ...item,
+            carta_responsiva_recibida: false,
+            certificado_medico_recibido: false,
+          })));
+          return;
+        }
+        if (error) throw error;
+        setBeneficiaries(data || []);
       } catch (error) {
-        console.error("Error cargando beneficiarios del tutor:", error);
-        setBeneficiaries([]);
-        setSelectedBeneficiaryId(null);
+        console.error("Error cargando estados documentales:", error);
+        Alert.alert("Error", "No se pudo cargar el estado de documentacion.");
+      } finally {
         setLoading(false);
       }
     };
 
-    fetchTutorBeneficiaries();
+    loadBeneficiaries();
   }, [profile?.id, profile?.role, routeBeneficiaryId]);
 
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchDocs();
-  };
-
-  // --- ACCIONES DE ADMINISTRADOR ---
-  const changeDocStatus = async (docId: string, newStatus: string, docName: string) => {
-    Alert.alert(
-      "Confirmar acción",
-      `¿Cambiar el estatus de "${docName}" a ${newStatus.replace("_", " ")}?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Confirmar",
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from("documents")
-                .update({ status: newStatus })
-                .eq("id", docId);
-
-              if (error) throw error;
-              fetchDocs(); // Recargar la lista
-            } catch (e) {
-              Alert.alert("Error", "No se pudo actualizar el estatus del documento.");
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  // --- ACCIONES DE TUTOR (Subir/Corregir) ---
-  const handleUpload = async (docType: string, existingDocId?: string) => {
+  const downloadFile = async (url: string, fileName: string) => {
     try {
-      if (!activeBeneficiaryId) {
-        Alert.alert("Sin beneficiario", "Selecciona un beneficiario antes de subir documentos.");
+      if (Platform.OS === "web" && typeof document !== "undefined") {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
         return;
       }
 
-      const res = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
-        copyToCacheDirectory: true,
-      });
-
-      if (res.canceled || !res.assets) return;
-      const file = res.assets[0];
-
-      Alert.alert("Subiendo...", "Espera un momento mientras subimos tu documento.");
-
-      // Subir archivo a Supabase Storage
-      const fileExt = file.name.split(".").pop() || "pdf";
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-      const filePath = `expedientes/${activeBeneficiaryId}/${fileName}`;
-      
-      const formData = new FormData();
-      formData.append("file", { uri: file.uri, name: fileName, type: file.mimeType || "application/pdf" } as any);
-
-      const { error: uploadError } = await supabase.storage.from("img").upload(filePath, formData);
-      if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage.from("img").getPublicUrl(filePath);
-      const publicUrl = data.publicUrl;
-
-      // Actualizar o Insertar en la tabla Documents
-      if (existingDocId) {
-        await supabase.from("documents").update({ 
-          admin_comment: publicUrl, // Guardamos la URL aquí
-          status: "pendiente",
-          upload_date: new Date().toISOString().split('T')[0]
-        }).eq("id", existingDocId);
-      } else {
-        await supabase.from("documents").insert({ 
-          beneficiary_id: activeBeneficiaryId, 
-          name: docType, 
-          document_type: docType, 
-          admin_comment: publicUrl, 
-          status: "pendiente",
-          upload_date: new Date().toISOString().split('T')[0]
-        });
-      }
-
-      Alert.alert("Éxito", "Documento subido correctamente.");
-      fetchDocs();
-
+      await Linking.openURL(url);
     } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "Ocurrió un problema al subir el documento.");
+      Alert.alert("No disponible", "No se pudo descargar el archivo en este momento.");
     }
   };
 
-  const openDocument = (url: string) => {
-    if (url && url.startsWith("http")) {
-      Linking.openURL(url);
-    } else {
-      Alert.alert("No disponible", "Este documento aún no tiene un archivo válido adjunto.");
-    }
+  const openUrl = (url: string) => {
+    Linking.openURL(url).catch(() => {
+      Alert.alert("No disponible", "No se pudo abrir el enlace en este momento.");
+    });
   };
-
-  const getDocForType = (name: string) => docs.find((d) => d.name === name || d.document_type === name);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -209,171 +138,100 @@ export default function DocumentosScreen() {
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Feather name="arrow-left" size={22} color="#FFFFFF" />
         </Pressable>
-        <Text style={styles.headerTitle}>Gestión documental</Text>
+        <Text style={styles.headerTitle}>Documentos</Text>
         <View style={{ width: 22 }} />
       </View>
 
-      {!activeBeneficiaryId && !loading ? (
-        <View style={styles.center}>
-          <Feather name="folder" size={36} color={colors.mutedForeground} />
-          <Text style={{ color: colors.mutedForeground, marginTop: 10, textAlign: "center" }}>
-            Aun no hay beneficiarios para consultar documentos.
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingBottom: 40 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.infoBox, { backgroundColor: colors.primary + "10", borderColor: colors.primary + "25" }]}>
+          <Feather name="shield" size={20} color={colors.primary} />
+          <Text style={[styles.infoText, { color: colors.foreground }]}>
+            Los documentos se descargan desde la aplicación y se envían directamente a la asociación para su revisión.
           </Text>
         </View>
-      ) : loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={{ color: colors.mutedForeground, marginTop: 10 }}>Cargando documentos...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={ALL_DOC_TYPES}
-          keyExtractor={(item) => item}
-          contentContainerStyle={[
-            styles.list,
-            { paddingBottom: 40 + insets.bottom },
-          ]}
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            <View style={styles.listHeader}>
-              {!routeBeneficiaryId && beneficiaries.length > 1 && (
-                <View style={styles.beneficiarySelector}>
-                  <Text style={[styles.selectorLabel, { color: colors.foreground }]}>Beneficiario</Text>
-                  <FlatList
-                    data={beneficiaries}
-                    horizontal
-                    keyExtractor={(item) => item.id}
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.selectorList}
-                    renderItem={({ item }) => {
-                      const selected = item.id === activeBeneficiaryId;
-                      return (
-                        <Pressable
-                          style={[
-                            styles.selectorChip,
-                            {
-                              backgroundColor: selected ? colors.primary : colors.muted,
-                              borderColor: selected ? colors.primary : colors.border,
-                            },
-                          ]}
-                          onPress={() => setSelectedBeneficiaryId(item.id)}
-                        >
-                          <Text style={[styles.selectorChipText, { color: selected ? "#FFFFFF" : colors.foreground }]}>
-                            {item.name || item.folio || "Beneficiario"}
-                          </Text>
-                        </Pressable>
-                      );
-                    }}
-                  />
-                </View>
-              )}
 
-              {!canValidateDocuments && docs.some(d => d.status === 'requiere_correccion' || d.status === 'rechazado') ? (
-              <View style={[styles.alertBanner, { backgroundColor: "#FEF3C7", borderColor: "#FCD34D" }]}>
-                <Feather name="alert-triangle" size={16} color="#92400E" />
-                <Text style={[styles.alertText, { color: "#92400E" }]}>
-                  Tienes documentos pendientes o con correcciones requeridas. Actualízalos para avanzar.
-                </Text>
-              </View>
-              ) : null}
+        <View style={styles.actions}>
+          <Pressable
+            style={[styles.actionCard, { borderColor: colors.border, backgroundColor: colors.card }]}
+            onPress={() => downloadFile(RESPONSIVE_LETTER_URL, "Gallos Smiling - Carta Responsiva.pdf")}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: "#1A4FA812" }]}>
+              <Feather name="download" size={20} color="#1A4FA8" />
             </View>
-          }
-          renderItem={({ item }) => {
-            const doc = getDocForType(item);
-            const status = doc?.status ?? "faltante";
-            const fileUrl = doc?.admin_comment; // Usamos admin_comment para almacenar el URL
-            const consent = getConsentByNameOrType(item);
+            <View style={styles.actionText}>
+              <Text style={[styles.actionTitle, { color: colors.foreground }]}>Descargar Carta Responsiva</Text>
+              <Text style={[styles.actionSub, { color: colors.mutedForeground }]}>Toca para descargar el PDF</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+          </Pressable>
 
-            return (
-              <View
-                style={[
-                  styles.docCard,
-                  { backgroundColor: colors.background, borderColor: colors.border, shadowColor: colors.foreground },
-                ]}
-              >
-                <View style={[styles.docIconWrap, { backgroundColor: colors.primary + "12" }]}>
-                  <Feather name={doc ? "file-text" : "file"} size={20} color={doc ? colors.primary : colors.mutedForeground} />
+          <Pressable
+            style={[styles.actionCard, { borderColor: colors.border, backgroundColor: colors.card }]}
+            onPress={() => downloadFile(MEDICAL_CERTIFICATE_FORMAT_URL, "Gallos Smiling - Formato Certificado Medico.pdf")}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: "#05966912" }]}>
+              <Feather name="download" size={20} color="#059669" />
+            </View>
+            <View style={styles.actionText}>
+              <Text style={[styles.actionTitle, { color: colors.foreground }]}>Descargar Formato de Certificado Médico</Text>
+              <Text style={[styles.actionSub, { color: colors.mutedForeground }]}>Formato para entregar a la asociación</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+          </Pressable>
+
+          <Pressable style={[styles.actionCard, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => openUrl(WHATSAPP_URL)}>
+            <View style={[styles.actionIcon, { backgroundColor: "#25D36618" }]}>
+              <Feather name="message-circle" size={20} color="#128C7E" />
+            </View>
+            <View style={styles.actionText}>
+              <Text style={[styles.actionTitle, { color: colors.foreground }]}>Contactar por WhatsApp</Text>
+              <Text style={[styles.actionSub, { color: colors.mutedForeground }]}>Enviar documentos para revisión</Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+          </Pressable>
+        </View>
+
+        <View style={[styles.section, { borderColor: colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Estado de Documentación</Text>
+          {loading ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color={colors.primary} />
+              <Text style={{ color: colors.mutedForeground }}>Cargando estados...</Text>
+            </View>
+          ) : beneficiaries.length === 0 ? (
+            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+              Aún no hay beneficiarios vinculados a esta cuenta.
+            </Text>
+          ) : (
+            beneficiaries.map((item) => (
+              <View key={item.id} style={[styles.stateCard, { borderColor: colors.border }]}>
+                <Text style={[styles.beneficiaryName, { color: colors.foreground }]}>{item.name}</Text>
+                <View style={styles.stateRow}>
+                  <Text style={[styles.stateLabel, { color: colors.mutedForeground }]}>Carta Responsiva</Text>
+                  <Text style={[styles.stateValue, { color: item.carta_responsiva_recibida ? "#059669" : "#92400E" }]}>
+                    {receivedLabel(item.carta_responsiva_recibida)}
+                  </Text>
                 </View>
-                
-                <View style={styles.docInfo}>
-                  <Text style={[styles.docName, { color: colors.foreground }]}>{item}</Text>
-                  
-                  {doc?.upload_date && (
-                    <Text style={[styles.docDate, { color: colors.mutedForeground }]}>
-                      Subido: {doc.upload_date}
-                    </Text>
-                  )}
-                  
-                  <StatusBadge status={status} small />
-
-                  {/* BOTONES ADMINISTRATIVOS (Solo visibles si es Admin y el doc existe) */}
-                  {canValidateDocuments && doc && (
-                    <View style={styles.adminActions}>
-                      <Pressable 
-                        style={[styles.adminBtn, { backgroundColor: colors.success + "20" }]} 
-                        onPress={() => changeDocStatus(doc.id, "validado", item)}
-                      >
-                        <Feather name="check" size={14} color={colors.success} />
-                        <Text style={[styles.adminBtnText, { color: colors.success }]}>Validar</Text>
-                      </Pressable>
-                      
-                      <Pressable 
-                        style={[styles.adminBtn, { backgroundColor: colors.destructive + "20" }]} 
-                        onPress={() => changeDocStatus(doc.id, "requiere_correccion", item)}
-                      >
-                        <Feather name="refresh-cw" size={14} color={colors.destructive} />
-                        <Text style={[styles.adminBtnText, { color: colors.destructive }]}>Corregir</Text>
-                      </Pressable>
-                    </View>
-                  )}
-                </View>
-
-                {/* BOTONES LATERALES (Ver y Subir) */}
-                <View style={styles.docActions}>
-                  {consent && (
-                    <Pressable
-                      style={[styles.actionBtn, { backgroundColor: colors.background, borderColor: colors.border, borderWidth: 1 }]}
-                      onPress={() =>
-                        router.push({
-                          pathname: "/consentimiento/[type]",
-                          params: { type: consent.type, beneficiaryId: activeBeneficiaryId ?? "" },
-                        } as any)
-                      }
-                    >
-                      <Feather name="file-text" size={14} color={colors.foreground} />
-                    </Pressable>
-                  )}
-                  {(!canValidateDocuments && (status === "faltante" || status === "requiere_correccion" || status === "rechazado")) && (
-                    <Pressable
-                      style={[styles.actionBtn, { backgroundColor: colors.primary }]}
-                      onPress={() => handleUpload(item, doc?.id)}
-                    >
-                      <Feather name="upload" size={14} color="#FFFFFF" />
-                    </Pressable>
-                  )}
-                  {doc && (
-                    <Pressable
-                      style={[styles.actionBtn, { backgroundColor: colors.muted, borderColor: colors.border, borderWidth: 1 }]}
-                      onPress={() => openDocument(fileUrl)}
-                    >
-                      <Feather name="eye" size={14} color={colors.foreground} />
-                    </Pressable>
-                  )}
+                <View style={styles.stateRow}>
+                  <Text style={[styles.stateLabel, { color: colors.mutedForeground }]}>Certificado Médico</Text>
+                  <Text style={[styles.stateValue, { color: item.certificado_medico_recibido ? "#059669" : "#92400E" }]}>
+                    {receivedLabel(item.certificado_medico_recibido)}
+                  </Text>
                 </View>
               </View>
-            );
-          }}
-        />
-      )}
+            ))
+          )}
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -389,79 +247,22 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "center",
   },
-  list: { paddingHorizontal: 20, paddingTop: 16, gap: 12 },
-  listHeader: { gap: 12, marginBottom: 8 },
-  beneficiarySelector: { gap: 8 },
-  selectorLabel: { fontSize: 14, fontFamily: "Inter_700Bold" },
-  selectorList: { gap: 8 },
-  selectorChip: {
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  selectorChipText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  alertBanner: {
-    flexDirection: "row",
-    gap: 10,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "flex-start",
-    marginBottom: 8,
-  },
-  alertText: {
-    flex: 1,
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    lineHeight: 19,
-  },
-  docCard: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  docIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  docInfo: { flex: 1, gap: 6 },
-  docName: { fontSize: 14, fontFamily: "Inter_600SemiBold", lineHeight: 20 },
-  docDate: { fontSize: 11, fontFamily: "Inter_400Regular" },
-  adminActions: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 6,
-  },
-  adminBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  adminBtnText: {
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-  },
-  docActions: { flexDirection: "row", gap: 8, alignItems: "center", marginTop: 2 },
-  actionBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  scroll: { padding: 20, gap: 18 },
+  infoBox: { flexDirection: "row", gap: 12, borderWidth: 1, borderRadius: 14, padding: 14, alignItems: "flex-start" },
+  infoText: { flex: 1, fontSize: 14, fontFamily: "Inter_500Medium", lineHeight: 21 },
+  actions: { gap: 12 },
+  actionCard: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 14, padding: 14 },
+  actionIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
+  actionText: { flex: 1, gap: 3 },
+  actionTitle: { fontSize: 14, fontFamily: "Inter_700Bold" },
+  actionSub: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  section: { borderWidth: 1, borderRadius: 14, padding: 16, gap: 12 },
+  sectionTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
+  loadingRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  emptyText: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  stateCard: { borderTopWidth: 1, paddingTop: 12, gap: 10 },
+  beneficiaryName: { fontSize: 15, fontFamily: "Inter_700Bold" },
+  stateRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
+  stateLabel: { flex: 1, fontSize: 13, fontFamily: "Inter_500Medium" },
+  stateValue: { fontSize: 13, fontFamily: "Inter_700Bold" },
 });

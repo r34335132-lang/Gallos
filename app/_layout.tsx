@@ -27,16 +27,26 @@ function RootLayoutNav() {
       <Stack.Screen name="onboarding" />
       <Stack.Screen name="login" />
       <Stack.Screen name="register" />
+      <Stack.Screen name="dashboard" />
       <Stack.Screen name="(tabs)" />
       
       {/* Nueva ruta pública para la galería */}
       <Stack.Screen name="galeria" />
+      <Stack.Screen name="noticias" />
+      <Stack.Screen name="campanas" />
+      <Stack.Screen name="eventos" />
+      <Stack.Screen name="sobre-nosotros" />
+      <Stack.Screen name="contacto" />
+      <Stack.Screen name="apoyar" />
       
       <Stack.Screen name="noticia/[id]" />
       <Stack.Screen name="consentimiento/[type]" />
       <Stack.Screen name="expediente/[id]" />
       <Stack.Screen name="documentos" />
       <Stack.Screen name="privacidad" />
+      <Stack.Screen name="terminos" />
+      <Stack.Screen name="manejo-documentos" />
+      <Stack.Screen name="uso-imagen" />
       <Stack.Screen name="admin" />
       <Stack.Screen name="estadisticas" />
       <Stack.Screen name="notificaciones" />

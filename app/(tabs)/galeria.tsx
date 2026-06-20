@@ -1,20 +1,25 @@
 import { Feather } from "@expo/vector-icons";
+import { VideoView, useVideoPlayer } from "expo-video";
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Dimensions,
   FlatList,
   Image,
+  type ImageStyle,
   Linking,
   Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  type StyleProp,
   Text,
   View,
+  type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
@@ -47,11 +52,72 @@ function buildRows(items: GalleryItem[]): Row[] {
   return rows;
 }
 
+function getYouTubeEmbedUrl(url: string) {
+  const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([^&?/]+)/);
+  return match?.[1] ? `https://www.youtube.com/embed/${match[1]}` : null;
+}
+
+function isDirectVideoUrl(url: string) {
+  return /\.(mp4|mov|m4v|webm)(\?.*)?$/i.test(url);
+}
+
+function VideoBackdrop({ uri, style }: { uri: string; style: StyleProp<ViewStyle> }) {
+  const player = useVideoPlayer(uri, (playerInstance) => {
+    playerInstance.loop = true;
+    playerInstance.muted = true;
+    playerInstance.play();
+  });
+
+  return <VideoView player={player} style={style} nativeControls={false} contentFit="cover" />;
+}
+
+function MediaBackdrop({ item, style }: { item: GalleryItem; style: StyleProp<ImageStyle> }) {
+  if (item.thumbnailUrl) {
+    return <Image source={{ uri: item.thumbnailUrl }} style={style} resizeMode="cover" />;
+  }
+
+  if (item.type === "video" && isDirectVideoUrl(item.mediaUrl)) {
+    return <VideoBackdrop uri={item.mediaUrl} style={style as StyleProp<ViewStyle>} />;
+  }
+
+  return (
+    <View style={[style, wc.videoFallback]}>
+      <Feather name={item.type === "video" ? "play-circle" : "image"} size={42} color="#fff" />
+    </View>
+  );
+}
+
+function NativeVideoPlayer({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (playerInstance) => {
+    playerInstance.loop = false;
+    playerInstance.play();
+  });
+
+  return (
+    <View style={vs.nativeVideoWrap}>
+      <VideoView
+        player={player}
+        style={vs.nativeVideo}
+        nativeControls
+        contentFit="contain"
+        allowsFullscreen
+        allowsPictureInPicture
+      />
+    </View>
+  );
+}
+
 function MediaViewer({ item, onClose }: { item: GalleryItem; onClose: () => void }) {
   const insets = useSafeAreaInsets();
+  const youtubeEmbedUrl = item.type === "video" ? getYouTubeEmbedUrl(item.mediaUrl) : null;
+  const directVideo = item.type === "video" && isDirectVideoUrl(item.mediaUrl);
+  const canEmbedVideo = item.type === "video" && Platform.OS === "web" && (youtubeEmbedUrl || directVideo);
 
   const playVideo = () => {
-    if (item.mediaUrl) Linking.openURL(item.mediaUrl);
+    if (!item.mediaUrl) return;
+    Linking.openURL(item.mediaUrl).catch(() => {
+      Alert.alert("No disponible", "No se pudo abrir el video.");
+    });
   };
 
   return (
@@ -67,15 +133,35 @@ function MediaViewer({ item, onClose }: { item: GalleryItem; onClose: () => void
 
         <View style={[vs.imgWrapper, { width }]}>
           {item.type === "video" ? (
-            <Pressable style={vs.videoPanel} onPress={playVideo}>
-              {item.thumbnailUrl ? <Image source={{ uri: item.thumbnailUrl }} style={vs.videoThumb} resizeMode="cover" /> : null}
-              <View style={vs.videoOverlay}>
-                <View style={vs.playButton}>
-                  <Feather name="play" size={34} color="#fff" />
-                </View>
-                <Text style={vs.videoText}>Reproducir video</Text>
+            canEmbedVideo ? (
+              <View style={vs.embeddedVideoWrap}>
+                {youtubeEmbedUrl
+                  ? React.createElement("iframe", {
+                      src: youtubeEmbedUrl,
+                      style: { width: "100%", height: "100%", border: 0, borderRadius: 14 },
+                      allow: "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture",
+                      allowFullScreen: true,
+                    } as any)
+                  : React.createElement("video", {
+                      src: item.mediaUrl,
+                      controls: true,
+                      autoPlay: true,
+                      style: { width: "100%", height: "100%", borderRadius: 14, backgroundColor: "#000" },
+                    } as any)}
               </View>
-            </Pressable>
+            ) : directVideo ? (
+              <NativeVideoPlayer uri={item.mediaUrl} />
+            ) : (
+              <Pressable style={vs.videoPanel} onPress={playVideo}>
+                <MediaBackdrop item={item} style={vs.videoThumb} />
+                <View style={vs.videoOverlay}>
+                  <View style={vs.playButton}>
+                    <Feather name="play" size={34} color="#fff" />
+                  </View>
+                  <Text style={vs.videoText}>Reproducir video</Text>
+                </View>
+              </Pressable>
+            )
           ) : (
             <Image source={{ uri: item.mediaUrl }} style={vs.img} resizeMode="contain" />
           )}
@@ -119,11 +205,7 @@ function WideCard({ item, onPress, index, accentColor }: { item: GalleryItem; on
   return (
     <Animated.View style={{ opacity: fade, transform: [{ translateY: ty }] }}>
       <Pressable onPress={onPress} style={({ pressed }) => [wc.card, { opacity: pressed ? 0.9 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] }]}>
-        {item.thumbnailUrl ? (
-          <Image source={{ uri: item.thumbnailUrl }} style={wc.img} resizeMode="cover" />
-        ) : (
-          <View style={[wc.img, wc.videoFallback]}><Feather name="play-circle" size={42} color="#fff" /></View>
-        )}
+        <MediaBackdrop item={item} style={wc.img} />
         <View style={[wc.scrim, { height: "100%", backgroundColor: "rgba(0,0,0,0.2)" }]} />
         <View style={wc.scrim} />
         <View style={wc.typeBadge}><TypeBadge type={item.type} /></View>
@@ -156,7 +238,7 @@ function SmallCard({ item, onPress, index }: { item: GalleryItem; onPress: () =>
   return (
     <Animated.View style={{ opacity: fade, transform: [{ translateY: ty }], width: cardWidth }}>
       <Pressable onPress={onPress} style={({ pressed }) => [sc.card, { width: cardWidth, opacity: pressed ? 0.9 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] }]}>
-        {item.thumbnailUrl ? <Image source={{ uri: item.thumbnailUrl }} style={sc.img} resizeMode="cover" /> : <View style={[sc.img, wc.videoFallback]} />}
+        <MediaBackdrop item={item} style={sc.img} />
         <View style={[sc.scrim, { height: "100%", backgroundColor: "rgba(0,0,0,0.1)" }]} />
         <View style={sc.scrim} />
         <View style={sc.typeBadge}><TypeBadge type={item.type} /></View>
@@ -268,6 +350,9 @@ const vs = StyleSheet.create({
   imgWrapper: { flex: 1, justifyContent: "center", alignItems: "center" },
   img: { width, flex: 1 },
   videoPanel: { width: "100%", flex: 1, alignItems: "center", justifyContent: "center" },
+  embeddedVideoWrap: { width: "92%", height: "72%", alignItems: "center", justifyContent: "center" },
+  nativeVideoWrap: { width: "100%", flex: 1, alignItems: "center", justifyContent: "center" },
+  nativeVideo: { width: "100%", height: "100%" },
   videoThumb: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%", opacity: 0.55 },
   videoOverlay: { alignItems: "center", gap: 14 },
   playButton: { width: 82, height: 82, borderRadius: 41, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.2)", borderWidth: 1, borderColor: "rgba(255,255,255,0.35)" },

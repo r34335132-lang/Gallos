@@ -282,14 +282,20 @@ export function mapSponsor(row: any): Sponsor {
 }
 
 export function mapGalleryItem(row: any): GalleryItem {
-  const type = row.type === "video" || row.media_type === "video" ? "video" : "imagen";
+  const mediaUrl = row.media_url ?? row.video_url ?? row.image_url ?? "";
+  const looksLikeVideo =
+    row.type === "video" ||
+    row.media_type === "video" ||
+    /\.(mp4|mov|m4v|webm)(\?.*)?$/i.test(mediaUrl) ||
+    /(?:youtube\.com|youtu\.be|vimeo\.com)/i.test(mediaUrl);
+  const type = looksLikeVideo ? "video" : "imagen";
   return {
     id: String(row.id),
     title: row.title ?? "Galería",
     description: row.description ?? "",
     type,
-    mediaUrl: row.media_url ?? row.video_url ?? row.image_url ?? "",
-    thumbnailUrl: row.thumbnail_url ?? row.image_url ?? null,
+    mediaUrl,
+    thumbnailUrl: row.thumbnail_url ?? (type === "imagen" ? row.image_url : null),
     tournamentName: row.tournaments?.name ?? row.tournament_name ?? null,
   };
 }

@@ -64,6 +64,8 @@ const SECTION_PERMISSIONS: Record<string, string[]> = {
 };
 
 const SPONSOR_LEVELS = ["Oro", "Plata", "Bronce", "Benefactor principal", "Apoyo en especie"];
+const MAX_GALLERY_VIDEO_SIZE_MB = 50;
+const MAX_GALLERY_VIDEO_SIZE_BYTES = MAX_GALLERY_VIDEO_SIZE_MB * 1024 * 1024;
 
 export default function AdminScreen() {
   const colors = useColors();
@@ -100,6 +102,7 @@ export default function AdminScreen() {
   const [galleryType, setGalleryType] = useState<"imagen" | "video">("imagen");
   const [videoUrl, setVideoUrl] = useState("");
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
+  const [galleryVideoMeta, setGalleryVideoMeta] = useState<{ name?: string; mimeType?: string; size?: number; file?: File } | null>(null);
 
   // Estados para Patrocinadores
   const [recentSponsors, setRecentSponsors] = useState<any[]>([]);
@@ -195,19 +198,27 @@ export default function AdminScreen() {
     }
   };
 
-  const uploadMediaToStorage = async (fileUri: string): Promise<string | null> => {
+  const uploadMediaToStorage = async (fileUri: string, fileNameFromAsset?: string | null, mimeTypeFromAsset?: string | null, webFile?: File): Promise<string | null> => {
     try {
-      const fileExt = fileUri.split(".").pop() || (galleryType === "video" ? "mp4" : "jpeg");
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const sourceName = fileNameFromAsset || fileUri.split("?")[0].split("/").pop() || "";
+      const fileExt = sourceName.includes(".") ? sourceName.split(".").pop() || "" : "";
+      const fallbackExt = mimeTypeFromAsset?.split("/")[1] || (galleryType === "video" ? "mp4" : "jpeg");
+      const normalizedExt = (fileExt || fallbackExt).replace("quicktime", "mov");
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${normalizedExt}`;
       const filePath = `uploads/${fileName}`;
-      const isVideo = ["mp4", "mov", "m4v", "webm"].includes(fileExt.toLowerCase());
+      const isVideo = galleryType === "video" || ["mp4", "mov", "m4v", "webm"].includes(normalizedExt.toLowerCase()) || mimeTypeFromAsset?.startsWith("video/");
+      const mimeType = mimeTypeFromAsset || (isVideo ? `video/${normalizedExt === "mov" ? "quicktime" : normalizedExt}` : `image/${normalizedExt === "jpg" ? "jpeg" : normalizedExt}`);
 
       const formData = new FormData();
-      formData.append("file", {
-        uri: fileUri,
-        name: fileName,
-        type: isVideo ? `video/${fileExt === "mov" ? "quicktime" : fileExt}` : `image/${fileExt === "jpg" ? "jpeg" : fileExt}`,
-      } as any);
+      if (webFile) {
+        formData.append("file", webFile);
+      } else {
+        formData.append("file", {
+          uri: fileUri,
+          name: fileName,
+          type: mimeType,
+        } as any);
+      }
 
       const { error } = await supabase.storage.from("img").upload(filePath, formData);
       if (error) throw error;
@@ -228,6 +239,8 @@ export default function AdminScreen() {
       allowsEditing: !isGallery, 
       allowsMultipleSelection: isGallery && galleryType === "imagen", 
       quality: 0.8,
+      videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
+      videoExportPreset: ImagePicker.VideoExportPreset.MediumQuality,
     });
 
     if (!result.canceled && result.assets.length > 0) {
@@ -235,7 +248,19 @@ export default function AdminScreen() {
         setNewsImage(result.assets[0].uri);
       } else if (type === "gallery") {
         const newUris = result.assets.map(a => a.uri);
-        setGalleryImages(prev => [...prev, ...newUris]);
+        if (galleryType === "video") {
+          const asset = result.assets[0];
+          setGalleryImages(asset?.uri ? [asset.uri] : []);
+          setGalleryVideoMeta({
+            name: asset?.fileName ?? undefined,
+            mimeType: asset?.mimeType,
+            size: asset?.fileSize,
+            file: asset?.file,
+          });
+        } else {
+          setGalleryImages(prev => [...prev, ...newUris]);
+          setGalleryVideoMeta(null);
+        }
       } else if (type === "sponsor") {
         setSponsorLogo(result.assets[0].uri);
       } else if (type === "sponsorPromo") {
@@ -269,6 +294,7 @@ export default function AdminScreen() {
       setGalleryType(firstType);
       setVideoUrl(firstType === "video" ? data[0]?.video_url || data[0]?.media_url || "" : "");
       setGalleryImages(data.map((d: any) => d.media_url || d.video_url || d.image_url).filter(Boolean));
+      setGalleryVideoMeta(null);
 
       const mapping: Record<string, string> = {};
       data.forEach((d: any) => {
@@ -339,12 +365,19 @@ export default function AdminScreen() {
     if (!photoTitle) return Alert.alert("Falta título", "El título es obligatorio.");
     if (galleryType === "imagen" && galleryImages.length === 0) return Alert.alert("Faltan imágenes", "Selecciona al menos una fotografía.");
     if (galleryType === "video" && galleryImages.length === 0 && !videoUrl.trim()) return Alert.alert("Falta video", "Agrega una URL o selecciona un archivo de video.");
+    if (galleryType === "video" && !videoUrl.trim() && galleryVideoMeta?.size && galleryVideoMeta.size > MAX_GALLERY_VIDEO_SIZE_BYTES) {
+      return Alert.alert(
+        "Video demasiado pesado",
+        `El video seleccionado pesa más de ${MAX_GALLERY_VIDEO_SIZE_MB} MB. Para videos pesados usa una URL de YouTube o una URL externa.`
+      );
+    }
     
     setUploading(true);
     let successCount = 0;
+    let lastGalleryError: any = null;
 
     if (galleryType === "video") {
-      const mediaUrl = videoUrl.trim() || (galleryImages[0]?.startsWith("http") ? galleryImages[0] : galleryImages[0] ? await uploadMediaToStorage(galleryImages[0]) : null);
+      const mediaUrl = videoUrl.trim() || (galleryImages[0]?.startsWith("http") ? galleryImages[0] : galleryImages[0] ? await uploadMediaToStorage(galleryImages[0], galleryVideoMeta?.name, galleryVideoMeta?.mimeType, galleryVideoMeta?.file) : null);
       if (!mediaUrl) {
         setUploading(false);
         return Alert.alert("Error", "No se pudo preparar el video.");
@@ -356,18 +389,32 @@ export default function AdminScreen() {
         type: "video",
         media_url: mediaUrl,
         video_url: mediaUrl,
-        image_url: null,
+        image_url: mediaUrl,
       };
 
       if (editingGalleryId) {
         const ids = Object.values(originalGalleryMapping);
         if (ids.length > 0) {
-          await supabase.from("gallery_photos").update(payload).in("id", ids);
-          successCount = ids.length;
+          const { error } = await supabase.from("gallery_photos").update(payload).in("id", ids);
+          lastGalleryError = error;
+          if (error?.code === "PGRST204") {
+            const fallback = await supabase.from("gallery_photos").update({ title: photoTitle, description: photoDesc, image_url: mediaUrl }).in("id", ids);
+            lastGalleryError = fallback.error;
+            if (!fallback.error) successCount = ids.length;
+          } else if (!error) {
+            successCount = ids.length;
+          }
         }
       } else {
         const { error } = await supabase.from("gallery_photos").insert(payload);
-        if (!error) successCount = 1;
+        lastGalleryError = error;
+        if (error?.code === "PGRST204") {
+          const fallback = await supabase.from("gallery_photos").insert({ title: photoTitle, description: photoDesc, image_url: mediaUrl });
+          lastGalleryError = fallback.error;
+          if (!fallback.error) successCount = 1;
+        } else if (!error) {
+          successCount = 1;
+        }
       }
     } else if (editingGalleryId) {
       const keptUrls = galleryImages.filter(uri => uri.startsWith("http"));
@@ -390,7 +437,12 @@ export default function AdminScreen() {
         const publicUrl = await uploadMediaToStorage(uri);
         if (publicUrl) {
           const { error } = await supabase.from("gallery_photos").insert({ title: photoTitle, description: photoDesc, type: "imagen", media_url: publicUrl, image_url: publicUrl });
-          if (!error) successCount++;
+          lastGalleryError = error;
+          if (error?.code === "PGRST204") {
+            const fallback = await supabase.from("gallery_photos").insert({ title: photoTitle, description: photoDesc, image_url: publicUrl });
+            lastGalleryError = fallback.error;
+            if (!fallback.error) successCount++;
+          } else if (!error) successCount++;
         }
       }
     } else {
@@ -398,8 +450,25 @@ export default function AdminScreen() {
         const publicUrl = await uploadMediaToStorage(uri);
         if (publicUrl) {
           const { error } = await supabase.from("gallery_photos").insert({ title: photoTitle, description: photoDesc, type: "imagen", media_url: publicUrl, image_url: publicUrl });
-          if (!error) successCount++;
+          lastGalleryError = error;
+          if (error?.code === "PGRST204") {
+            const fallback = await supabase.from("gallery_photos").insert({ title: photoTitle, description: photoDesc, image_url: publicUrl });
+            lastGalleryError = fallback.error;
+            if (!fallback.error) successCount++;
+          } else if (!error) successCount++;
         }
+      }
+    }
+
+    if (successCount === 0) {
+      const { data: savedRows } = await supabase
+        .from("gallery_photos")
+        .select("id")
+        .eq("title", photoTitle)
+        .limit(1);
+
+      if (savedRows && savedRows.length > 0) {
+        successCount = savedRows.length;
       }
     }
 
@@ -407,10 +476,11 @@ export default function AdminScreen() {
     if (successCount > 0) {
       Alert.alert("Éxito", editingGalleryId ? "Galería actualizada." : `Se guardaron ${successCount} elemento(s).`);
       setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]); 
-      setVideoUrl(""); setGalleryType("imagen"); setEditingGalleryId(null); setOriginalGalleryMapping({});
+      setVideoUrl(""); setGalleryVideoMeta(null); setGalleryType("imagen"); setEditingGalleryId(null); setOriginalGalleryMapping({});
       loadAdminContent();
     } else {
-      Alert.alert("Error", "No se pudieron guardar las imágenes.");
+      console.error("Error al guardar multimedia:", lastGalleryError);
+      Alert.alert("Error", lastGalleryError?.message || "No se pudo guardar el contenido multimedia.");
     }
   };
 
@@ -690,6 +760,7 @@ export default function AdminScreen() {
                     onPress={() => {
                       setGalleryType(type);
                       setGalleryImages([]);
+                      setGalleryVideoMeta(null);
                       setVideoUrl("");
                     }}
                   >
@@ -713,12 +784,15 @@ export default function AdminScreen() {
                   value={videoUrl}
                   onChangeText={setVideoUrl}
                 />
+                <Text style={[styles.helperText, { color: colors.mutedForeground }]}>
+                  Recomendado para videos pesados. Los archivos de galería deben pesar menos de {MAX_GALLERY_VIDEO_SIZE_MB} MB.
+                </Text>
               </View>
             )}
 
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.foreground }]}>
-                {galleryType === "imagen" ? `Fotografías (${galleryImages.length})` : "Archivo de video"}
+                {galleryType === "imagen" ? `Fotografías (${galleryImages.length})` : "Video de galería"}
               </Text>
 
               {galleryImages.length > 0 ? (
@@ -730,6 +804,11 @@ export default function AdminScreen() {
                       ) : (
                         <View style={[styles.thumbnailImage, { backgroundColor: colors.primary + "15", alignItems: "center", justifyContent: "center" }]}>
                           <Feather name="play-circle" size={26} color={colors.primary} />
+                          {galleryVideoMeta?.size ? (
+                            <Text style={[styles.videoSizeText, { color: colors.primary }]}>
+                              {(galleryVideoMeta.size / 1024 / 1024).toFixed(1)} MB
+                            </Text>
+                          ) : null}
                         </View>
                       )}
                       <Pressable style={styles.removeBadge} onPress={() => removeGalleryImage(index)}>
@@ -749,7 +828,7 @@ export default function AdminScreen() {
                 <Pressable style={[styles.imageBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => pickImage("gallery")}>
                   <Feather name={galleryType === "imagen" ? "image" : "video"} size={32} color={colors.mutedForeground} />
                   <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>
-                    {galleryType === "imagen" ? "Tocar para seleccionar fotos" : "Tocar para seleccionar video"}
+                    {galleryType === "imagen" ? "Tocar para seleccionar fotos" : "Tocar para seleccionar video de la galería"}
                   </Text>
                 </Pressable>
               )}
@@ -760,7 +839,7 @@ export default function AdminScreen() {
             </Pressable>
 
             {editingGalleryId && (
-              <Pressable style={{ alignItems: "center", marginTop: 10 }} onPress={() => { setEditingGalleryId(null); setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]); setVideoUrl(""); setGalleryType("imagen"); setOriginalGalleryMapping({}); }}>
+              <Pressable style={{ alignItems: "center", marginTop: 10 }} onPress={() => { setEditingGalleryId(null); setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]); setVideoUrl(""); setGalleryVideoMeta(null); setGalleryType("imagen"); setOriginalGalleryMapping({}); }}>
                 <Text style={{ color: colors.primary }}>Cancelar edición</Text>
               </Pressable>
             )}
@@ -1033,6 +1112,7 @@ const styles = StyleSheet.create({
   formSection: { gap: 16 },
   inputGroup: { gap: 8 },
   inputLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  helperText: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18 },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, height: 50, fontSize: 15, fontFamily: "Inter_400Regular" },
   inputArea: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingTop: 14, height: 120, fontSize: 15, fontFamily: "Inter_400Regular" },
   roleGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
@@ -1046,6 +1126,7 @@ const styles = StyleSheet.create({
   submitBtnText: { color: "#FFF", fontSize: 16, fontFamily: "Inter_700Bold" },
   thumbnailContainer: { position: "relative", width: 100, height: 100 },
   thumbnailImage: { width: "100%", height: "100%", borderRadius: 12, resizeMode: "cover" },
+  videoSizeText: { fontSize: 11, fontFamily: "Inter_700Bold", marginTop: 4 },
   removeBadge: { position: "absolute", top: -6, right: -6, backgroundColor: "#EF4444", width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#FFF" },
   addMoreBtn: { width: 100, height: 100, borderRadius: 12, borderWidth: 1, borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
   

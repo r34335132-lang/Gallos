@@ -2,7 +2,7 @@
   "expo": {
     "name": "Gallos Smiling",
     "slug": "GallosSmiling",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
     "scheme": "mobile",
@@ -36,7 +36,14 @@
       ]
     },
     "web": {
-      "favicon": "./assets/images/logo.png"
+      "favicon": "./assets/images/logo.png",
+      "name": "Gallos Smiling",
+      "shortName": "Gallos",
+      "themeColor": "#0D2B6E",
+      "backgroundColor": "#FFFFFF",
+      "display": "standalone",
+      "bundler": "metro",
+      "output": "static"
     },
     "plugins": [
       [
@@ -53,7 +60,8 @@
           "icon": "./assets/images/logo.png",
           "color": "#0D2B6E"
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -54,7 +54,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   vision:
     "Ser una fundacion cercana, transparente y confiable para familias, aliados y patrocinadores.",
   values: ["Transparencia", "Cercania", "Respeto", "Comunidad", "Responsabilidad"],
-  whatsappUrl: "https://wa.me/524421234567",
+  whatsappUrl: process.env.EXPO_PUBLIC_WHATSAPP_URL || "https://wa.me/524421234567",
   email: "contacto@gallossmiling.org",
   phone: "+52 442 123 4567",
   serviceArea: "Queretaro y zona metropolitana",

@@ -89,6 +89,10 @@ export interface GalleryItem {
   type: GalleryMediaType;
   mediaUrl: string;
   thumbnailUrl?: string | null;
+  albumId?: string | null;
+  albumName?: string | null;
+  eventId?: string | null;
+  eventName?: string | null;
   tournamentName?: string | null;
 }
 
@@ -283,6 +287,16 @@ export function mapSponsor(row: any): Sponsor {
 
 export function mapGalleryItem(row: any): GalleryItem {
   const mediaUrl = row.media_url ?? row.video_url ?? row.image_url ?? "";
+  const albumName =
+    row.gallery_albums?.title ??
+    row.albums?.title ??
+    row.album_title ??
+    row.album_name ??
+    row.event_name ??
+    row.tournaments?.name ??
+    row.tournament_name ??
+    row.title ??
+    "GalerÃ­a";
   const looksLikeVideo =
     row.type === "video" ||
     row.media_type === "video" ||
@@ -296,7 +310,11 @@ export function mapGalleryItem(row: any): GalleryItem {
     type,
     mediaUrl,
     thumbnailUrl: row.thumbnail_url ?? (type === "imagen" ? row.image_url : null),
-    tournamentName: row.tournaments?.name ?? row.tournament_name ?? null,
+    albumId: row.album_id ?? null,
+    albumName,
+    eventId: row.event_id ?? row.tournament_id ?? null,
+    eventName: albumName,
+    tournamentName: row.tournaments?.name ?? row.tournament_name ?? albumName ?? null,
   };
 }
 

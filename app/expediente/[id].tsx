@@ -10,6 +10,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,6 +27,11 @@ export default function BeneficiaryDetailScreen() {
   const canAdminister = ["admin", "capturista", "validador"].includes(profile?.role || "");
 
   const [beneficiary, setBeneficiary] = useState<any>(null);
+  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
+  const [attendanceStatus, setAttendanceStatus] = useState<"asistio" | "no_asistio" | "justificado">("asistio");
+  const [attendanceEvent, setAttendanceEvent] = useState("");
+  const [attendanceNotes, setAttendanceNotes] = useState("");
+  const [savingAttendance, setSavingAttendance] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const fetchBeneficiary = async () => {
@@ -42,8 +48,31 @@ export default function BeneficiaryDetailScreen() {
   };
 
   useEffect(() => {
-    if (id) fetchBeneficiary();
+    if (id) {
+      fetchBeneficiary();
+      fetchAttendance();
+    }
   }, [id]);
+
+  const fetchAttendance = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("attendance_records")
+        .select("*")
+        .eq("beneficiary_id", id)
+        .order("attendance_date", { ascending: false })
+        .limit(20);
+
+      if (error?.code === "42P01" || error?.code === "PGRST205") {
+        setAttendanceRecords([]);
+        return;
+      }
+      if (error) throw error;
+      setAttendanceRecords(data || []);
+    } catch (error) {
+      console.error("Error cargando asistencia:", error);
+    }
+  };
 
   const updateBeneficiary = async (payload: Record<string, boolean | string>) => {
     try {
@@ -71,6 +100,38 @@ export default function BeneficiaryDetailScreen() {
 
   const toggleDocument = (field: "carta_responsiva_recibida" | "certificado_medico_recibido", value: boolean) => {
     updateBeneficiary({ [field]: value });
+  };
+
+  const saveAttendance = async () => {
+    if (!canAdminister) return;
+    try {
+      setSavingAttendance(true);
+      const today = new Date().toISOString().slice(0, 10);
+      const { error } = await supabase.from("attendance_records").insert({
+        beneficiary_id: id,
+        attendance_date: today,
+        event_name: attendanceEvent.trim() || "Actividad Gallos Smiling",
+        status: attendanceStatus,
+        notes: attendanceNotes.trim() || null,
+        created_by: profile?.id ?? null,
+      });
+
+      if (error?.code === "42P01" || error?.code === "PGRST205") {
+        Alert.alert("Migración pendiente", "Aplica la migración 202607110001_attendance_and_gallery_events.sql para activar asistencia.");
+        return;
+      }
+      if (error) throw error;
+      setAttendanceEvent("");
+      setAttendanceNotes("");
+      setAttendanceStatus("asistio");
+      await fetchAttendance();
+      Alert.alert("Asistencia guardada", "El registro se guardó correctamente.");
+    } catch (error) {
+      console.error("Error guardando asistencia:", error);
+      Alert.alert("Error", "No se pudo guardar la asistencia.");
+    } finally {
+      setSavingAttendance(false);
+    }
   };
 
   if (loading) {
@@ -159,6 +220,71 @@ export default function BeneficiaryDetailScreen() {
             editable={canAdminister}
             onChange={(value) => toggleDocument("certificado_medico_recibido", value)}
           />
+        </View>
+
+        <View style={[styles.section, { borderColor: colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Asistencia</Text>
+          {canAdminister && (
+            <View style={styles.attendanceForm}>
+              <View style={styles.toggleGroupWide}>
+                {[
+                  { value: "asistio", label: "Asistió", color: "#059669" },
+                  { value: "no_asistio", label: "No asistió", color: "#DC2626" },
+                  { value: "justificado", label: "Justificado", color: "#D97706" },
+                ].map((item) => {
+                  const active = attendanceStatus === item.value;
+                  return (
+                    <Pressable
+                      key={item.value}
+                      style={[styles.attendanceChip, { backgroundColor: active ? item.color : colors.muted, borderColor: active ? item.color : colors.border }]}
+                      onPress={() => setAttendanceStatus(item.value as typeof attendanceStatus)}
+                    >
+                      <Text style={[styles.toggleText, { color: active ? "#FFFFFF" : colors.foreground }]}>{item.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <TextInput
+                style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
+                placeholder="Evento o actividad"
+                placeholderTextColor={colors.mutedForeground}
+                value={attendanceEvent}
+                onChangeText={setAttendanceEvent}
+              />
+              <TextInput
+                style={[styles.inputArea, { color: colors.foreground, borderColor: colors.border }]}
+                placeholder="Notas opcionales"
+                placeholderTextColor={colors.mutedForeground}
+                value={attendanceNotes}
+                onChangeText={setAttendanceNotes}
+                multiline
+                textAlignVertical="top"
+              />
+              <Pressable style={[styles.saveAttendanceBtn, { backgroundColor: colors.primary, opacity: savingAttendance ? 0.7 : 1 }]} onPress={saveAttendance} disabled={savingAttendance}>
+                {savingAttendance ? <ActivityIndicator color="#fff" /> : <Text style={styles.adminBtnText}>Guardar asistencia de hoy</Text>}
+              </Pressable>
+            </View>
+          )}
+
+          {attendanceRecords.length === 0 ? (
+            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Aún no hay registros de asistencia.</Text>
+          ) : (
+            <View style={styles.attendanceList}>
+              {attendanceRecords.map((record) => (
+                <View key={record.id} style={[styles.attendanceRow, { borderTopColor: colors.border }]}>
+                  <View style={styles.docStateText}>
+                    <Text style={[styles.infoValue, { color: colors.foreground }]}>{record.event_name || "Actividad Gallos Smiling"}</Text>
+                    <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>
+                      {record.attendance_date}{record.notes ? ` · ${record.notes}` : ""}
+                    </Text>
+                  </View>
+                  <Text style={[styles.stateValue, { color: record.status === "asistio" ? "#059669" : record.status === "justificado" ? "#D97706" : "#DC2626" }]}>
+                    {record.status === "asistio" ? "Asistió" : record.status === "justificado" ? "Justificado" : "No asistió"}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         {canAdminister && (
@@ -256,4 +382,13 @@ const styles = StyleSheet.create({
   adminButtons: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   adminBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
   adminBtnText: { color: "#FFFFFF", fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  attendanceForm: { gap: 10, marginBottom: 12 },
+  toggleGroupWide: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  attendanceChip: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 },
+  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, height: 48, fontSize: 14, fontFamily: "Inter_400Regular" },
+  inputArea: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingTop: 12, minHeight: 78, fontSize: 14, fontFamily: "Inter_400Regular" },
+  saveAttendanceBtn: { height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  emptyText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  attendanceList: { gap: 0 },
+  attendanceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, paddingVertical: 12, gap: 12 },
 });

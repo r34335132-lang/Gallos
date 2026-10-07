@@ -32,6 +32,7 @@ const CARD_RADIUS_SM = 18;
 const FILTER_ALL = "Todos";
 
 type Row = { type: "wide"; item: GalleryItem; index: number } | { type: "pair"; left: GalleryItem; right: GalleryItem; li: number; ri: number };
+type GalleryEvent = { id: string; title: string; description: string; cover: GalleryItem; items: GalleryItem[]; photoCount: number; videoCount: number };
 
 function buildRows(items: GalleryItem[]): Row[] {
   const rows: Row[] = [];
@@ -50,6 +51,28 @@ function buildRows(items: GalleryItem[]): Row[] {
     }
   }
   return rows;
+}
+
+function groupByEvent(items: GalleryItem[]): GalleryEvent[] {
+  const grouped = new Map<string, GalleryItem[]>();
+  for (const item of items) {
+    const key = item.albumId || item.eventId || item.albumName || item.eventName || item.tournamentName || item.title || "Galeria";
+    grouped.set(key, [...(grouped.get(key) || []), item]);
+  }
+
+  return Array.from(grouped.entries()).map(([key, group]) => {
+    const cover = group.find((item) => item.type === "imagen") || group[0];
+    const title = cover.albumName || cover.eventName || cover.tournamentName || cover.title || key;
+    return {
+      id: key,
+      title,
+      description: cover.description || `${group.length} elemento(s) multimedia`,
+      cover,
+      items: group,
+      photoCount: group.filter((item) => item.type === "imagen").length,
+      videoCount: group.filter((item) => item.type === "video").length,
+    };
+  });
 }
 
 function getYouTubeEmbedUrl(url: string) {
@@ -72,14 +95,8 @@ function VideoBackdrop({ uri, style }: { uri: string; style: StyleProp<ViewStyle
 }
 
 function MediaBackdrop({ item, style }: { item: GalleryItem; style: StyleProp<ImageStyle> }) {
-  if (item.thumbnailUrl) {
-    return <Image source={{ uri: item.thumbnailUrl }} style={style} resizeMode="cover" />;
-  }
-
-  if (item.type === "video" && isDirectVideoUrl(item.mediaUrl)) {
-    return <VideoBackdrop uri={item.mediaUrl} style={style as StyleProp<ViewStyle>} />;
-  }
-
+  if (item.thumbnailUrl) return <Image source={{ uri: item.thumbnailUrl }} style={style} resizeMode="cover" />;
+  if (item.type === "video" && isDirectVideoUrl(item.mediaUrl)) return <VideoBackdrop uri={item.mediaUrl} style={style as StyleProp<ViewStyle>} />;
   return (
     <View style={[style, wc.videoFallback]}>
       <Feather name={item.type === "video" ? "play-circle" : "image"} size={42} color="#fff" />
@@ -95,14 +112,7 @@ function NativeVideoPlayer({ uri }: { uri: string }) {
 
   return (
     <View style={vs.nativeVideoWrap}>
-      <VideoView
-        player={player}
-        style={vs.nativeVideo}
-        nativeControls
-        contentFit="contain"
-        allowsFullscreen
-        allowsPictureInPicture
-      />
+      <VideoView player={player} style={vs.nativeVideo} nativeControls contentFit="contain" allowsFullscreen allowsPictureInPicture />
     </View>
   );
 }
@@ -115,9 +125,7 @@ function MediaViewer({ item, onClose }: { item: GalleryItem; onClose: () => void
 
   const playVideo = () => {
     if (!item.mediaUrl) return;
-    Linking.openURL(item.mediaUrl).catch(() => {
-      Alert.alert("No disponible", "No se pudo abrir el video.");
-    });
+    Linking.openURL(item.mediaUrl).catch(() => Alert.alert("No disponible", "No se pudo abrir el video."));
   };
 
   return (
@@ -155,9 +163,7 @@ function MediaViewer({ item, onClose }: { item: GalleryItem; onClose: () => void
               <Pressable style={vs.videoPanel} onPress={playVideo}>
                 <MediaBackdrop item={item} style={vs.videoThumb} />
                 <View style={vs.videoOverlay}>
-                  <View style={vs.playButton}>
-                    <Feather name="play" size={34} color="#fff" />
-                  </View>
+                  <View style={vs.playButton}><Feather name="play" size={34} color="#fff" /></View>
                   <Text style={vs.videoText}>Reproducir video</Text>
                 </View>
               </Pressable>
@@ -168,15 +174,53 @@ function MediaViewer({ item, onClose }: { item: GalleryItem; onClose: () => void
         </View>
 
         <View style={[vs.infoBar, { paddingBottom: insets.bottom + 30 }]}>
-          {item.tournamentName && (
+          {!!item.eventName && (
             <View style={vs.tournRow}>
-              <Feather name="award" size={12} color="rgba(255,255,255,0.9)" />
-              <Text style={vs.tournText}>{item.tournamentName}</Text>
+              <Feather name="calendar" size={12} color="rgba(255,255,255,0.9)" />
+              <Text style={vs.tournText}>{item.eventName}</Text>
             </View>
           )}
           <Text style={vs.infoTitle}>{item.title}</Text>
           {!!item.description && <Text style={vs.infoDesc} numberOfLines={3}>{item.description}</Text>}
         </View>
+      </View>
+    </Modal>
+  );
+}
+
+function EventViewer({ event, onClose }: { event: GalleryEvent; onClose: () => void }) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const [selected, setSelected] = useState<GalleryItem | null>(null);
+  const rows = buildRows(event.items);
+
+  const renderRow = ({ item }: { item: Row }) => {
+    if (item.type === "wide") return <WideCard item={item.item} index={item.index} accentColor={colors.primary} onPress={() => setSelected(item.item)} />;
+    return (
+      <View style={{ flexDirection: "row", gap: 16 }}>
+        <SmallCard item={item.left} index={item.li} onPress={() => setSelected(item.left)} />
+        <SmallCard item={item.right} index={item.ri} onPress={() => setSelected(item.right)} />
+      </View>
+    );
+  };
+
+  return (
+    <Modal animationType="slide" statusBarTranslucent>
+      <View style={[s.container, { backgroundColor: colors.background }]}>
+        <View style={[s.header, { backgroundColor: colors.primary, paddingTop: insets.top + (Platform.OS === "web" ? 67 : 16) }]}>
+          <View style={s.headerRow}>
+            <Pressable onPress={onClose} hitSlop={15} style={s.iconBtn}>
+              <Feather name="arrow-left" size={24} color="#fff" />
+            </Pressable>
+            <View style={s.titleContainer}>
+              <Text style={s.headerTitle} numberOfLines={1}>{event.title}</Text>
+              <Text style={s.headerSubTitle}>{event.photoCount} fotos · {event.videoCount} videos</Text>
+            </View>
+            <View style={s.iconBtn} />
+          </View>
+        </View>
+        <FlatList data={rows} keyExtractor={(_, i) => String(i)} contentContainerStyle={s.feed} showsVerticalScrollIndicator={false} renderItem={renderRow} />
+        {selected && <MediaViewer item={selected} onClose={() => setSelected(null)} />}
       </View>
     </Modal>
   );
@@ -210,12 +254,10 @@ function WideCard({ item, onPress, index, accentColor }: { item: GalleryItem; on
         <View style={wc.scrim} />
         <View style={wc.typeBadge}><TypeBadge type={item.type} /></View>
         <View style={wc.body}>
-          {item.tournamentName && (
-            <View style={[wc.badge, { backgroundColor: accentColor }]}>
-              <Feather name="star" size={10} color="#FFF" />
-              <Text style={wc.badgeText} numberOfLines={1}>{item.tournamentName}</Text>
-            </View>
-          )}
+          <View style={[wc.badge, { backgroundColor: accentColor }]}>
+            <Feather name={item.type === "video" ? "play-circle" : "camera"} size={10} color="#FFF" />
+            <Text style={wc.badgeText}>{item.type === "video" ? "Video" : "Foto"}</Text>
+          </View>
           <Text style={wc.title} numberOfLines={2}>{item.title}</Text>
         </View>
       </Pressable>
@@ -250,20 +292,52 @@ function SmallCard({ item, onPress, index }: { item: GalleryItem; onPress: () =>
   );
 }
 
+function EventCard({ event, onPress, index, accentColor }: { event: GalleryEvent; onPress: () => void; index: number; accentColor: string }) {
+  const fade = useRef(new Animated.Value(0)).current;
+  const ty = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fade, { toValue: 1, duration: 500, delay: (index % 4) * 80, useNativeDriver: true }),
+      Animated.timing(ty, { toValue: 0, duration: 500, delay: (index % 4) * 80, useNativeDriver: true }),
+    ]).start();
+  }, [index]);
+
+  return (
+    <Animated.View style={{ opacity: fade, transform: [{ translateY: ty }] }}>
+      <Pressable onPress={onPress} style={({ pressed }) => [ec.card, { opacity: pressed ? 0.92 : 1, transform: [{ scale: pressed ? 0.985 : 1 }] }]}>
+        <MediaBackdrop item={event.cover} style={ec.cover} />
+        <View style={ec.scrim} />
+        <View style={ec.topRow}>
+          <View style={[ec.countPill, { backgroundColor: accentColor }]}>
+            <Feather name="layers" size={12} color="#fff" />
+            <Text style={ec.countText}>{event.items.length} archivos</Text>
+          </View>
+        </View>
+        <View style={ec.body}>
+          <Text style={ec.title} numberOfLines={2}>{event.title}</Text>
+          <Text style={ec.meta}>{event.photoCount} fotos · {event.videoCount} videos</Text>
+          <Text style={ec.desc} numberOfLines={2}>{event.description}</Text>
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 export default function Galeria() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<GalleryItem | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<GalleryEvent | null>(null);
   const [filter, setFilter] = useState(FILTER_ALL);
 
-  const filters = [FILTER_ALL, "Foto", "Video"];
-  const filtered = items.filter((item) => filter === FILTER_ALL || (filter === "Foto" ? item.type === "imagen" : item.type === "video"));
-  const rows = buildRows(filtered);
+  const events = groupByEvent(items);
+  const filters = [FILTER_ALL, "Con fotos", "Con videos"];
+  const filteredEvents = events.filter((event) => filter === FILTER_ALL || (filter === "Con fotos" ? event.photoCount > 0 : event.videoCount > 0));
 
   const fetchGallery = async () => {
-    const { data, error } = await supabase.from("gallery_photos").select("*, tournaments(name)").order("upload_date", { ascending: false });
+    const { data, error } = await supabase.from("gallery_photos").select("*, tournaments(name), gallery_albums(title)").order("upload_date", { ascending: false });
     if (!error) setItems((data || []).map(mapGalleryItem).filter((item) => Boolean(item.mediaUrl)));
     setLoading(false);
   };
@@ -271,18 +345,6 @@ export default function Galeria() {
   useEffect(() => {
     fetchGallery();
   }, []);
-
-  const renderRow = ({ item }: { item: Row }) => {
-    if (item.type === "wide") {
-      return <WideCard item={item.item} index={item.index} accentColor={colors.primary} onPress={() => setSelected(item.item)} />;
-    }
-    return (
-      <View style={{ flexDirection: "row", gap: 16 }}>
-        <SmallCard item={item.left} index={item.li} onPress={() => setSelected(item.left)} />
-        <SmallCard item={item.right} index={item.ri} onPress={() => setSelected(item.right)} />
-      </View>
-    );
-  };
 
   return (
     <View style={[s.container, { backgroundColor: colors.background }]}>
@@ -292,8 +354,8 @@ export default function Galeria() {
             <Feather name="arrow-left" size={24} color="#fff" />
           </Pressable>
           <View style={s.titleContainer}>
-            <Text style={s.headerTitle}>Galería Smiling</Text>
-            <Text style={s.headerSubTitle}>Fotos y videos</Text>
+            <Text style={s.headerTitle}>Galeria Smiling</Text>
+            <Text style={s.headerSubTitle}>Eventos con fotos y videos</Text>
           </View>
           <View style={s.iconBtn} />
         </View>
@@ -318,21 +380,27 @@ export default function Galeria() {
 
       {loading ? (
         <View style={s.empty}><ActivityIndicator size="large" color={colors.primary} /></View>
-      ) : filtered.length === 0 ? (
+      ) : filteredEvents.length === 0 ? (
         <View style={s.empty}>
           <View style={[s.emptyIconWrap, { backgroundColor: colors.primary + "15" }]}>
             <Feather name="camera-off" size={36} color={colors.primary} />
           </View>
-          <Text style={[s.emptyTitle, { color: colors.foreground }]}>Aún no hay multimedia</Text>
+          <Text style={[s.emptyTitle, { color: colors.foreground }]}>Aun no hay multimedia</Text>
           <Text style={[s.emptyText, { color: colors.mutedForeground }]}>
-            Pronto compartiremos fotos y videos de actividades Gallos Smiling.
+            Pronto compartiremos eventos con fotos y videos de actividades Gallos Smiling.
           </Text>
         </View>
       ) : (
-        <FlatList data={rows} keyExtractor={(_, i) => String(i)} contentContainerStyle={s.feed} showsVerticalScrollIndicator={false} renderItem={renderRow} />
+        <FlatList
+          data={filteredEvents}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={s.feed}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item, index }) => <EventCard event={item} index={index} accentColor={colors.primary} onPress={() => setSelectedEvent(item)} />}
+        />
       )}
 
-      {selected && <MediaViewer item={selected} onClose={() => setSelected(null)} />}
+      {selectedEvent && <EventViewer event={selectedEvent} onClose={() => setSelectedEvent(null)} />}
     </View>
   );
 }
@@ -383,6 +451,19 @@ const sc = StyleSheet.create({
   typeBadge: { position: "absolute", top: 10, right: 10 },
   body: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 14 },
   title: { color: "#fff", fontSize: 14, fontFamily: "Inter_700Bold", lineHeight: 20, textShadowColor: "rgba(0,0,0,0.8)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+});
+
+const ec = StyleSheet.create({
+  card: { height: 260, borderRadius: CARD_RADIUS, overflow: "hidden", elevation: 6, shadowColor: "#000", shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 5 } },
+  cover: { position: "absolute", width: "100%", height: "100%" },
+  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.32)" },
+  topRow: { position: "absolute", top: 16, left: 16, right: 16, flexDirection: "row", justifyContent: "space-between" },
+  countPill: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
+  countText: { color: "#fff", fontSize: 12, fontFamily: "Inter_700Bold" },
+  body: { position: "absolute", left: 0, right: 0, bottom: 0, padding: 20, gap: 6, backgroundColor: "rgba(0,0,0,0.56)" },
+  title: { color: "#fff", fontSize: 22, lineHeight: 28, fontFamily: "Inter_700Bold" },
+  meta: { color: "rgba(255,255,255,0.9)", fontSize: 13, fontFamily: "Inter_700Bold" },
+  desc: { color: "rgba(255,255,255,0.78)", fontSize: 13, lineHeight: 19, fontFamily: "Inter_400Regular" },
 });
 
 const s = StyleSheet.create({

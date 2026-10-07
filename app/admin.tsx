@@ -66,6 +66,7 @@ const SECTION_PERMISSIONS: Record<string, string[]> = {
 const SPONSOR_LEVELS = ["Oro", "Plata", "Bronce", "Benefactor principal", "Apoyo en especie"];
 const MAX_GALLERY_VIDEO_SIZE_MB = 50;
 const MAX_GALLERY_VIDEO_SIZE_BYTES = MAX_GALLERY_VIDEO_SIZE_MB * 1024 * 1024;
+type GalleryMediaDraft = { uri: string; type: "imagen" | "video"; name?: string; mimeType?: string; size?: number; file?: File };
 
 export default function AdminScreen() {
   const colors = useColors();
@@ -92,6 +93,7 @@ export default function AdminScreen() {
   const [newsSummary, setNewsSummary] = useState("");
   const [newsContent, setNewsContent] = useState("");
   const [newsImage, setNewsImage] = useState<string | null>(null);
+  const [newsVideoUrl, setNewsVideoUrl] = useState("");
 
   // Estados para Galería
   const [recentPhotos, setRecentPhotos] = useState<any[]>([]);
@@ -99,8 +101,9 @@ export default function AdminScreen() {
   const [originalGalleryMapping, setOriginalGalleryMapping] = useState<Record<string, string>>({});
   const [photoTitle, setPhotoTitle] = useState("");
   const [photoDesc, setPhotoDesc] = useState("");
-  const [galleryType, setGalleryType] = useState<"imagen" | "video">("imagen");
+  const [galleryType, setGalleryType] = useState<"imagen" | "video" | "mixto">("mixto");
   const [videoUrl, setVideoUrl] = useState("");
+  const [galleryMediaItems, setGalleryMediaItems] = useState<GalleryMediaDraft[]>([]);
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
   const [galleryVideoMeta, setGalleryVideoMeta] = useState<{ name?: string; mimeType?: string; size?: number; file?: File } | null>(null);
 
@@ -198,15 +201,21 @@ export default function AdminScreen() {
     }
   };
 
-  const uploadMediaToStorage = async (fileUri: string, fileNameFromAsset?: string | null, mimeTypeFromAsset?: string | null, webFile?: File): Promise<string | null> => {
+  const uploadMediaToStorage = async (
+    fileUri: string,
+    fileNameFromAsset?: string | null,
+    mimeTypeFromAsset?: string | null,
+    webFile?: File,
+    mediaType: "imagen" | "video" = "imagen"
+  ): Promise<string | null> => {
     try {
       const sourceName = fileNameFromAsset || fileUri.split("?")[0].split("/").pop() || "";
       const fileExt = sourceName.includes(".") ? sourceName.split(".").pop() || "" : "";
-      const fallbackExt = mimeTypeFromAsset?.split("/")[1] || (galleryType === "video" ? "mp4" : "jpeg");
+      const fallbackExt = mimeTypeFromAsset?.split("/")[1] || (mediaType === "video" ? "mp4" : "jpeg");
       const normalizedExt = (fileExt || fallbackExt).replace("quicktime", "mov");
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${normalizedExt}`;
       const filePath = `uploads/${fileName}`;
-      const isVideo = galleryType === "video" || ["mp4", "mov", "m4v", "webm"].includes(normalizedExt.toLowerCase()) || mimeTypeFromAsset?.startsWith("video/");
+      const isVideo = mediaType === "video" || ["mp4", "mov", "m4v", "webm"].includes(normalizedExt.toLowerCase()) || mimeTypeFromAsset?.startsWith("video/");
       const mimeType = mimeTypeFromAsset || (isVideo ? `video/${normalizedExt === "mov" ? "quicktime" : normalizedExt}` : `image/${normalizedExt === "jpg" ? "jpeg" : normalizedExt}`);
 
       const formData = new FormData();
@@ -231,13 +240,13 @@ export default function AdminScreen() {
     }
   };
 
-  const pickImage = async (type: "news" | "gallery" | "sponsor" | "sponsorPromo") => {
+  const pickImage = async (type: "news" | "gallery" | "sponsor" | "sponsorPromo", galleryPickerType: "imagen" | "video" | "mixto" = "mixto") => {
     const isGallery = type === "gallery";
     
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: type === "gallery" && galleryType === "video" ? ["videos"] : ["images"],
+      mediaTypes: type === "gallery" ? (galleryPickerType === "imagen" ? ["images"] : galleryPickerType === "video" ? ["videos"] : ["images", "videos"]) : ["images"],
       allowsEditing: !isGallery, 
-      allowsMultipleSelection: isGallery && galleryType === "imagen", 
+      allowsMultipleSelection: isGallery, 
       quality: 0.8,
       videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
       videoExportPreset: ImagePicker.VideoExportPreset.MediumQuality,
@@ -247,19 +256,32 @@ export default function AdminScreen() {
       if (type === "news") {
         setNewsImage(result.assets[0].uri);
       } else if (type === "gallery") {
-        const newUris = result.assets.map(a => a.uri);
-        if (galleryType === "video") {
-          const asset = result.assets[0];
-          setGalleryImages(asset?.uri ? [asset.uri] : []);
-          setGalleryVideoMeta({
-            name: asset?.fileName ?? undefined,
-            mimeType: asset?.mimeType,
-            size: asset?.fileSize,
-            file: asset?.file,
+        const newItems: GalleryMediaDraft[] = result.assets
+          .filter((asset) => Boolean(asset.uri))
+          .map((asset) => {
+            const inferredType =
+              asset.type === "video" || asset.mimeType?.startsWith("video/") || /\.(mp4|mov|m4v|webm)(\?.*)?$/i.test(asset.uri)
+                ? "video"
+                : "imagen";
+            return {
+              uri: asset.uri,
+              type: inferredType,
+              name: asset.fileName ?? undefined,
+              mimeType: asset.mimeType,
+              size: asset.fileSize,
+              file: asset.file,
+            };
           });
-        } else {
-          setGalleryImages(prev => [...prev, ...newUris]);
-          setGalleryVideoMeta(null);
+        setGalleryMediaItems((prev) => [...prev, ...newItems]);
+        setGalleryImages((prev) => [...prev, ...newItems.map((item) => item.uri)]);
+        const firstVideo = newItems.find((item) => item.type === "video");
+        if (firstVideo) {
+          setGalleryVideoMeta({
+            name: firstVideo.name,
+            mimeType: firstVideo.mimeType,
+            size: firstVideo.size,
+            file: firstVideo.file,
+          });
         }
       } else if (type === "sponsor") {
         setSponsorLogo(result.assets[0].uri);
@@ -270,7 +292,7 @@ export default function AdminScreen() {
   };
 
   const removeGalleryImage = (indexToRemove: number) => {
-    setGalleryImages(prev => prev.filter((_, index) => index !== indexToRemove));
+    setGalleryMediaItems(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
   const selectNewsForEdit = (item: any) => {
@@ -280,6 +302,7 @@ export default function AdminScreen() {
     setNewsContent(item.content || "");
     setNewsCategory(item.category || "Fundación");
     setNewsImage(item.image_url || null);
+    setNewsVideoUrl(item.video_url || "");
   };
 
   const selectGalleryForEdit = async (item: any) => {
@@ -290,11 +313,23 @@ export default function AdminScreen() {
       setEditingGalleryId(item.title);
       setPhotoTitle(item.title || "");
       setPhotoDesc(data[0]?.description || "");
-      const firstType = data[0]?.type === "video" || data[0]?.media_type === "video" ? "video" : "imagen";
-      setGalleryType(firstType);
-      setVideoUrl(firstType === "video" ? data[0]?.video_url || data[0]?.media_url || "" : "");
-      setGalleryImages(data.map((d: any) => d.media_url || d.video_url || d.image_url).filter(Boolean));
-      setGalleryVideoMeta(null);
+      setVideoUrl("");
+      setGalleryMediaItems(
+        data
+          .map((d: any) => {
+            const mediaUrl = d.media_url || d.video_url || d.image_url;
+            if (!mediaUrl) return null;
+            const type =
+              d.type === "video" ||
+              d.media_type === "video" ||
+              /\.(mp4|mov|m4v|webm)(\?.*)?$/i.test(mediaUrl) ||
+              /(?:youtube\.com|youtu\.be|vimeo\.com)/i.test(mediaUrl)
+                ? "video"
+                : "imagen";
+            return { uri: mediaUrl, type } as GalleryMediaDraft;
+          })
+          .filter((draft): draft is GalleryMediaDraft => Boolean(draft))
+      );
 
       const mapping: Record<string, string> = {};
       data.forEach((d: any) => {
@@ -339,6 +374,7 @@ export default function AdminScreen() {
       summary: newsSummary,
       content: newsContent,
       image_url: publicUrl,
+      video_url: newsVideoUrl.trim() || null,
     };
 
     let error;
@@ -353,10 +389,88 @@ export default function AdminScreen() {
     setUploading(false);
     if (!error) {
       Alert.alert("Éxito", editingNewsId ? "Noticia actualizada." : "Noticia publicada.");
-      setNewsTitle(""); setNewsSummary(""); setNewsContent(""); setNewsImage(null); setEditingNewsId(null);
+      setNewsTitle(""); setNewsSummary(""); setNewsContent(""); setNewsImage(null); setNewsVideoUrl(""); setEditingNewsId(null);
       loadAdminContent();
     } else {
       Alert.alert("Error", "No se pudo guardar la noticia.");
+    }
+  };
+
+  const handleUploadMixedGallery = async () => {
+    if (!canPublishContent) return Alert.alert("Sin permisos", "Tu rol no puede subir multimedia.");
+    if (!photoTitle.trim()) return Alert.alert("Falta titulo", "El titulo del evento es obligatorio.");
+
+    const videoUrls = videoUrl
+      .split(/\r?\n|,/)
+      .map((url) => url.trim())
+      .filter(Boolean);
+
+    if (galleryMediaItems.length === 0 && videoUrls.length === 0) {
+      return Alert.alert("Falta multimedia", "Agrega fotos, videos o URLs de video para el mismo evento.");
+    }
+
+    const oversizedVideo = galleryMediaItems.find((item) => item.type === "video" && item.size && item.size > MAX_GALLERY_VIDEO_SIZE_BYTES);
+    if (oversizedVideo) {
+      return Alert.alert("Video demasiado pesado", `Un video seleccionado pesa mas de ${MAX_GALLERY_VIDEO_SIZE_MB} MB. Para videos pesados usa YouTube o una URL externa.`);
+    }
+
+    setUploading(true);
+    let successCount = 0;
+    let lastGalleryError: any = null;
+
+    if (editingGalleryId) {
+      const ids = Object.values(originalGalleryMapping);
+      if (ids.length > 0) await supabase.from("gallery_photos").delete().in("id", ids);
+    }
+
+    const insertGalleryRow = async (mediaUrl: string, mediaType: "imagen" | "video") => {
+      const payload = {
+        title: photoTitle.trim(),
+        description: photoDesc,
+        type: mediaType,
+        media_url: mediaUrl,
+        video_url: mediaType === "video" ? mediaUrl : null,
+        image_url: mediaUrl,
+        event_name: photoTitle.trim(),
+      };
+      const { error } = await supabase.from("gallery_photos").insert(payload);
+      lastGalleryError = error;
+      if (error?.code === "PGRST204") {
+        const fallback = await supabase.from("gallery_photos").insert({ title: photoTitle.trim(), description: photoDesc, image_url: mediaUrl });
+        lastGalleryError = fallback.error;
+        if (!fallback.error) successCount++;
+      } else if (!error) {
+        successCount++;
+      }
+    };
+
+    for (const item of galleryMediaItems) {
+      const publicUrl = item.uri.startsWith("http")
+        ? item.uri
+        : await uploadMediaToStorage(item.uri, item.name, item.mimeType, item.file, item.type);
+      if (publicUrl) await insertGalleryRow(publicUrl, item.type);
+    }
+
+    for (const url of videoUrls) {
+      await insertGalleryRow(url, "video");
+    }
+
+    setUploading(false);
+    if (successCount > 0) {
+      Alert.alert("Exito", editingGalleryId ? "Galeria actualizada." : `Se guardaron ${successCount} elemento(s).`);
+      setPhotoTitle("");
+      setPhotoDesc("");
+      setGalleryMediaItems([]);
+      setGalleryImages([]);
+      setGalleryVideoMeta(null);
+      setVideoUrl("");
+      setGalleryType("mixto");
+      setEditingGalleryId(null);
+      setOriginalGalleryMapping({});
+      loadAdminContent();
+    } else {
+      console.error("Error al guardar multimedia:", lastGalleryError);
+      Alert.alert("Error", lastGalleryError?.message || "No se pudo guardar el contenido multimedia.");
     }
   };
 
@@ -699,6 +813,19 @@ export default function AdminScreen() {
               </Pressable>
             </View>
 
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.foreground }]}>Video de la noticia</Text>
+              <TextInput
+                style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
+                placeholder="URL de YouTube, Vimeo o video externo"
+                placeholderTextColor={colors.mutedForeground}
+                keyboardType="url"
+                autoCapitalize="none"
+                value={newsVideoUrl}
+                onChangeText={setNewsVideoUrl}
+              />
+            </View>
+
             <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} onPress={handlePublishNews} disabled={uploading}>
               {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{editingNewsId ? "Guardar Cambios" : "Publicar Noticia"}</Text>}
             </Pressable>
@@ -747,7 +874,7 @@ export default function AdminScreen() {
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.foreground }]}>Tipo</Text>
               <View style={styles.roleGrid}>
-                {(["imagen", "video"] as const).map((type) => (
+                {(["mixto", "imagen", "video"] as const).map((type) => (
                   <Pressable
                     key={type}
                     style={[
@@ -759,20 +886,17 @@ export default function AdminScreen() {
                     ]}
                     onPress={() => {
                       setGalleryType(type);
-                      setGalleryImages([]);
-                      setGalleryVideoMeta(null);
-                      setVideoUrl("");
                     }}
                   >
                     <Text style={[styles.roleChipText, { color: galleryType === type ? "#FFFFFF" : colors.foreground }]}>
-                      {type === "imagen" ? "Imagen" : "Video"}
+                      {type === "mixto" ? "Fotos y videos" : type === "imagen" ? "Solo fotos" : "Solo videos"}
                     </Text>
                   </Pressable>
                 ))}
               </View>
             </View>
 
-            {galleryType === "video" && (
+            {galleryType !== "imagen" && (
               <View style={styles.inputGroup}>
                 <Text style={[styles.inputLabel, { color: colors.foreground }]}>URL de YouTube o externa</Text>
                 <TextInput
@@ -792,21 +916,21 @@ export default function AdminScreen() {
 
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.foreground }]}>
-                {galleryType === "imagen" ? `Fotografías (${galleryImages.length})` : "Video de galería"}
+                Multimedia del evento ({galleryMediaItems.length})
               </Text>
 
-              {galleryImages.length > 0 ? (
+              {galleryMediaItems.length > 0 ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 4 }}>
-                  {galleryImages.map((uri, index) => (
+                  {galleryMediaItems.map((item, index) => (
                     <View key={index} style={styles.thumbnailContainer}>
-                      {galleryType === "imagen" ? (
-                        <Image source={{ uri }} style={styles.thumbnailImage} />
+                      {item.type === "imagen" ? (
+                        <Image source={{ uri: item.uri }} style={styles.thumbnailImage} />
                       ) : (
                         <View style={[styles.thumbnailImage, { backgroundColor: colors.primary + "15", alignItems: "center", justifyContent: "center" }]}>
                           <Feather name="play-circle" size={26} color={colors.primary} />
-                          {galleryVideoMeta?.size ? (
+                          {item.size ? (
                             <Text style={[styles.videoSizeText, { color: colors.primary }]}>
-                              {(galleryVideoMeta.size / 1024 / 1024).toFixed(1)} MB
+                              {(item.size / 1024 / 1024).toFixed(1)} MB
                             </Text>
                           ) : null}
                         </View>
@@ -828,18 +952,18 @@ export default function AdminScreen() {
                 <Pressable style={[styles.imageBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => pickImage("gallery")}>
                   <Feather name={galleryType === "imagen" ? "image" : "video"} size={32} color={colors.mutedForeground} />
                   <Text style={{ color: colors.mutedForeground, marginTop: 8 }}>
-                    {galleryType === "imagen" ? "Tocar para seleccionar fotos" : "Tocar para seleccionar video de la galería"}
+                    {galleryType === "imagen" ? "Tocar para seleccionar fotos" : galleryType === "video" ? "Tocar para seleccionar videos" : "Tocar para seleccionar fotos y videos"}
                   </Text>
                 </Pressable>
               )}
             </View>
 
-            <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} onPress={handleUploadPhoto} disabled={uploading}>
+            <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} onPress={handleUploadMixedGallery} disabled={uploading}>
               {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{editingGalleryId ? "Actualizar" : "Publicar"}</Text>}
             </Pressable>
 
             {editingGalleryId && (
-              <Pressable style={{ alignItems: "center", marginTop: 10 }} onPress={() => { setEditingGalleryId(null); setPhotoTitle(""); setPhotoDesc(""); setGalleryImages([]); setVideoUrl(""); setGalleryVideoMeta(null); setGalleryType("imagen"); setOriginalGalleryMapping({}); }}>
+              <Pressable style={{ alignItems: "center", marginTop: 10 }} onPress={() => { setEditingGalleryId(null); setPhotoTitle(""); setPhotoDesc(""); setGalleryMediaItems([]); setGalleryImages([]); setVideoUrl(""); setGalleryVideoMeta(null); setGalleryType("mixto"); setOriginalGalleryMapping({}); }}>
                 <Text style={{ color: colors.primary }}>Cancelar edición</Text>
               </Pressable>
             )}
@@ -1139,3 +1263,4 @@ const styles = StyleSheet.create({
   listDate: { fontSize: 12, fontFamily: "Inter_400Regular" },
   editIconBtn: { padding: 8, borderRadius: 8 },
 });
+

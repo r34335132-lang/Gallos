@@ -15,13 +15,13 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
-import { supabase } from "@/lib/supabase";
+import { supabase, supabaseUrl } from "@/lib/supabase";
 
 const RESPONSIVE_LETTER_URL =
-  "https://jfutdmtjcunkvefojlgm.supabase.co/storage/v1/object/public/img/documents/Gallos%20Smiling%20-%20Carta%20Responsiva.pdf";
+  `${supabaseUrl}/storage/v1/object/public/img/documents/Gallos%20Smiling%20-%20Carta%20Responsiva.pdf`;
 const MEDICAL_CERTIFICATE_FORMAT_URL =
-  "https://jfutdmtjcunkvefojlgm.supabase.co/storage/v1/object/public/img/documents/Gallos%20Smiling%20-%20Formato%20Certificado%20Medico.pdf";
-const WHATSAPP_URL = "https://wa.me/524421234567?text=Hola%20Gallos%20Smiling%2C%20quiero%20enviar%20documentos%20para%20revision.";
+  `${supabaseUrl}/storage/v1/object/public/img/documents/Gallos%20Smiling%20-%20Formato%20Certificado%20Medico.pdf`;
+const WHATSAPP_URL = `${process.env.EXPO_PUBLIC_WHATSAPP_URL || "https://wa.me/524421234567"}?text=Hola%20Gallos%20Smiling%2C%20quiero%20enviar%20documentos%20para%20revision.`;
 
 type BeneficiaryDocState = {
   id: string;

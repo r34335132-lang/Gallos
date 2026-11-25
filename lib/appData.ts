@@ -19,8 +19,8 @@ export const ADMIN_ROLES: UserRole[] = [
 export const ATTENDANCE_ROLES: UserRole[] = ["admin", "capturista", "validador", "entrenador"];
 
 export const STAFF_ROLES: { value: Exclude<UserRole, "tutor" | "patrocinador" | "visitante">; label: string }[] = [
+  { value: "entrenador", label: "Entrenador (coach)" },
   { value: "comunicacion", label: "Comunicación" },
-  { value: "entrenador", label: "Entrenador" },
   { value: "capturista", label: "Capturista" },
   { value: "validador", label: "Validador" },
   { value: "admin", label: "Administrador" },

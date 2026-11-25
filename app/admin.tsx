@@ -32,7 +32,7 @@ import { DEFAULT_SITE_SETTINGS } from "@/lib/publicContent";
 import { supabase, supabaseAnonKey, supabaseUrl } from "@/lib/supabase";
 
 const ADMIN_SECTIONS = [
-  { icon: "check-square" as const, label: "Pasar asistencia", desc: "Lista por sede para entrenadores", route: "/asistencia", color: "#0891B2" },
+  { icon: "check-square" as const, label: "Pasar asistencia", desc: "Coach: Sí/No por alumno + foto del entrenamiento", route: "/asistencia", color: "#0891B2" },
   { icon: "user-plus" as const, label: "Registrar beneficiario", desc: "Capturar una nueva solicitud en base de datos", route: "/(tabs)/registrar", color: "#059669" },
   { icon: "users" as const, label: "Beneficiarios", desc: "Gestionar beneficiarios y estados documentales", route: "/(tabs)/expedientes", color: "#1A4FA8" },
   { icon: "file-text" as const, label: "Noticias Publicadas", desc: "Ver todas las noticias", route: "/(tabs)/noticias", color: "#059669" },
@@ -677,9 +677,16 @@ export default function AdminScreen() {
 
       if (profileError) throw profileError;
 
+      const createdRole = staffRole;
+      const createdName = staffName.trim();
       await refreshProfile();
-      Alert.alert("Cuenta creada", `Se registró a ${staffName.trim()}.`);
       setStaffName(""); setStaffEmail(""); setStaffPhone(""); setStaffPassword(""); setStaffRole("comunicacion");
+      Alert.alert(
+        createdRole === "entrenador" ? "Cuenta de coach lista" : "Cuenta creada",
+        createdRole === "entrenador"
+          ? `Se registró a ${createdName} (${normalizedEmail}). Al iniciar sesión entra a Pasar asistencia: marca Sí/No por alumno y sube la foto del entrenamiento.`
+          : `Se registró a ${createdName}. Ya puede iniciar sesión.`
+      );
       setActiveTab("dashboard");
     } catch (error: any) {
       Alert.alert("Error", error.message || "Fallo en creación.");
@@ -1281,7 +1288,10 @@ export default function AdminScreen() {
         {/* ================= TAB 5: CUENTAS ================= */}
         {activeTab === "users" && canManageUsers && (
           <View style={styles.formSection}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Crear cuenta interna</Text>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Crear cuenta interna / coach</Text>
+            <Text style={[styles.helperText, { color: colors.mutedForeground, marginBottom: 8 }]}>
+              Para un coach elige el rol Entrenador, escribe su correo y una contraseña temporal. Él inicia sesión y solo ve la pantalla de asistencia.
+            </Text>
 
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.foreground }]}>Rol</Text>
@@ -1329,12 +1339,14 @@ export default function AdminScreen() {
             <View style={[styles.infoBox, { backgroundColor: colors.primary + "10", borderColor: colors.primary + "25" }]}>
               <Feather name="info" size={16} color={colors.primary} />
               <Text style={[styles.infoBoxText, { color: colors.foreground }]}>
-                La opción principal es Comunicación. También puedes crear capturistas, validadores o administradores si tu política de Supabase lo permite.
+                {staffRole === "entrenador"
+                  ? "Cuenta de coach: le das un correo y una contraseña. Al entrar va directo a Pasar asistencia: marca si cada chico Sí fue o No fue al entrenamiento y sube la foto de la sesión. La info de los alumnos la carga el staff en Registrar beneficiario."
+                  : "Puedes crear coaches (Entrenador), Comunicación, capturistas, validadores o administradores. El coach solo pasa lista y sube la foto del entrenamiento."}
               </Text>
             </View>
 
             <Pressable style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: uploading ? 0.7 : 1 }]} onPress={handleCreateStaffAccount} disabled={uploading}>
-              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Crear cuenta</Text>}
+              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{staffRole === "entrenador" ? "Crear cuenta de coach" : "Crear cuenta"}</Text>}
             </Pressable>
           </View>
         )}

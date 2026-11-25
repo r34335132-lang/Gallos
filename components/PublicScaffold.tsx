@@ -15,6 +15,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { IS_PUBLIC_APP } from "@/lib/appVariant";
+import { openWebPortal } from "@/lib/nativeActions";
 
 const LOGO = require("@/assets/images/logo.png");
 
@@ -77,12 +79,17 @@ export function PublicScaffold({
           </View>
         )}
 
-        {!compact && (
+        {!compact && (IS_PUBLIC_APP ? (
+          <Pressable style={[styles.loginButton, { backgroundColor: colors.primary }]} onPress={openWebPortal}>
+            <Feather name="external-link" size={15} color="#fff" />
+            <Text style={styles.loginText}>Sitio web</Text>
+          </Pressable>
+        ) : (
           <Pressable style={[styles.loginButton, { backgroundColor: colors.primary }]} onPress={() => go(user ? (isAdmin ? "/admin" : "/dashboard") : "/login")}>
             <Feather name={user ? "layout" : "log-in"} size={15} color="#fff" />
             <Text style={styles.loginText}>{user ? "Dashboard" : "Login"}</Text>
           </Pressable>
-        )}
+        ))}
       </View>
 
       {compact && menuOpen && (
@@ -93,9 +100,21 @@ export function PublicScaffold({
               <Text style={[styles.mobileNavText, { color: colors.foreground }]}>{item.label}</Text>
             </Pressable>
           ))}
-          <Pressable style={[styles.mobileLogin, { backgroundColor: colors.primary }]} onPress={() => go(user ? (isAdmin ? "/admin" : "/dashboard") : "/login")}>
-            <Text style={styles.loginText}>{user ? "Ir al dashboard" : "Iniciar sesion"}</Text>
-          </Pressable>
+          {IS_PUBLIC_APP ? (
+            <Pressable
+              style={[styles.mobileLogin, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                setMenuOpen(false);
+                openWebPortal();
+              }}
+            >
+              <Text style={styles.loginText}>Visitar sitio web</Text>
+            </Pressable>
+          ) : (
+            <Pressable style={[styles.mobileLogin, { backgroundColor: colors.primary }]} onPress={() => go(user ? (isAdmin ? "/admin" : "/dashboard") : "/login")}>
+              <Text style={styles.loginText}>{user ? "Ir al dashboard" : "Iniciar sesion"}</Text>
+            </Pressable>
+          )}
         </View>
       )}
 
@@ -116,12 +135,16 @@ export function PublicScaffold({
         <View style={[styles.footer, { borderColor: colors.border }]}>
           <Text style={[styles.footerTitle, { color: colors.foreground }]}>Gallos Smiling</Text>
           <Text style={[styles.footerText, { color: colors.mutedForeground }]}>
-            Comunicacion institucional, noticias, eventos, actividades, patrocinadores y seguimiento basico de documentacion.
+            {IS_PUBLIC_APP
+              ? "Comunicacion institucional, noticias, eventos, actividades y patrocinadores."
+              : "Comunicacion institucional, noticias, eventos, actividades, patrocinadores y seguimiento basico de documentacion."}
           </Text>
           <View style={styles.footerLinks}>
             <Pressable onPress={() => go("/privacidad")}><Text style={[styles.footerLink, { color: colors.primary }]}>Privacidad</Text></Pressable>
             <Pressable onPress={() => go("/terminos")}><Text style={[styles.footerLink, { color: colors.primary }]}>Terminos</Text></Pressable>
-            <Pressable onPress={() => go("/manejo-documentos")}><Text style={[styles.footerLink, { color: colors.primary }]}>Documentos e imagenes</Text></Pressable>
+            {!IS_PUBLIC_APP && (
+              <Pressable onPress={() => go("/manejo-documentos")}><Text style={[styles.footerLink, { color: colors.primary }]}>Documentos e imagenes</Text></Pressable>
+            )}
             <Pressable onPress={() => Linking.openURL("mailto:contacto@gallossmiling.org")}><Text style={[styles.footerLink, { color: colors.primary }]}>Correo</Text></Pressable>
           </View>
         </View>
@@ -160,8 +183,8 @@ const styles = StyleSheet.create({
   mobileLogin: { alignItems: "center", marginTop: 8, borderRadius: 14, paddingVertical: 13 },
   scroll: { flexGrow: 1 },
   hero: { position: "relative", overflow: "hidden", justifyContent: "flex-end" },
-  heroImage: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
-  heroShade: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(13,43,110,0.58)" },
+  heroImage: { ...StyleSheet.absoluteFill, width: "100%", height: "100%" },
+  heroShade: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(13,43,110,0.58)" },
   heroText: { paddingHorizontal: 22, paddingVertical: 34, maxWidth: 980, width: "100%", alignSelf: "center", gap: 8 },
   heroTitle: { color: "#fff", fontSize: 34, lineHeight: 40, fontFamily: "Inter_700Bold" },
   heroSubtitle: { color: "rgba(255,255,255,0.9)", fontSize: 16, lineHeight: 24, fontFamily: "Inter_500Medium", maxWidth: 760 },

@@ -12,6 +12,7 @@ export default function DashboardRoute() {
   useEffect(() => {
     if (loading) return;
     if (!user) router.replace("/login");
+    else if (user.role === "entrenador") router.replace("/asistencia" as any);
     else if (isAdmin) router.replace("/admin");
     else router.replace("/(tabs)");
   }, [loading, user, isAdmin]);

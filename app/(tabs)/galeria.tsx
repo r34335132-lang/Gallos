@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { VideoView, useVideoPlayer } from "expo-video";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -24,6 +24,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { mapGalleryItem, type GalleryItem } from "@/lib/appData";
+import { GALLERY_COLUMNS, albumCountLabel, groupGalleryAlbums, type GalleryAlbum as GalleryEvent } from "@/lib/galleryAlbums";
+import { isHeicUrl } from "@/lib/heic";
+import { goBack } from "@/lib/navigation";
 import { supabase } from "@/lib/supabase";
 
 const { width } = Dimensions.get("window");
@@ -32,7 +35,6 @@ const CARD_RADIUS_SM = 18;
 const FILTER_ALL = "Todos";
 
 type Row = { type: "wide"; item: GalleryItem; index: number } | { type: "pair"; left: GalleryItem; right: GalleryItem; li: number; ri: number };
-type GalleryEvent = { id: string; title: string; description: string; cover: GalleryItem; items: GalleryItem[]; photoCount: number; videoCount: number };
 
 function buildRows(items: GalleryItem[]): Row[] {
   const rows: Row[] = [];
@@ -51,28 +53,6 @@ function buildRows(items: GalleryItem[]): Row[] {
     }
   }
   return rows;
-}
-
-function groupByEvent(items: GalleryItem[]): GalleryEvent[] {
-  const grouped = new Map<string, GalleryItem[]>();
-  for (const item of items) {
-    const key = item.albumId || item.eventId || item.albumName || item.eventName || item.tournamentName || item.title || "Galeria";
-    grouped.set(key, [...(grouped.get(key) || []), item]);
-  }
-
-  return Array.from(grouped.entries()).map(([key, group]) => {
-    const cover = group.find((item) => item.type === "imagen") || group[0];
-    const title = cover.albumName || cover.eventName || cover.tournamentName || cover.title || key;
-    return {
-      id: key,
-      title,
-      description: cover.description || `${group.length} elemento(s) multimedia`,
-      cover,
-      items: group,
-      photoCount: group.filter((item) => item.type === "imagen").length,
-      videoCount: group.filter((item) => item.type === "video").length,
-    };
-  });
 }
 
 function getYouTubeEmbedUrl(url: string) {
@@ -95,7 +75,9 @@ function VideoBackdrop({ uri, style }: { uri: string; style: StyleProp<ViewStyle
 }
 
 function MediaBackdrop({ item, style }: { item: GalleryItem; style: StyleProp<ImageStyle> }) {
-  if (item.thumbnailUrl) return <Image source={{ uri: item.thumbnailUrl }} style={style} resizeMode="cover" />;
+  if (item.thumbnailUrl && !(Platform.OS === "web" && isHeicUrl(item.thumbnailUrl))) {
+    return <Image source={{ uri: item.thumbnailUrl }} style={style} resizeMode="cover" />;
+  }
   if (item.type === "video" && isDirectVideoUrl(item.mediaUrl)) return <VideoBackdrop uri={item.mediaUrl} style={style as StyleProp<ViewStyle>} />;
   return (
     <View style={[style, wc.videoFallback]}>
@@ -112,7 +94,7 @@ function NativeVideoPlayer({ uri }: { uri: string }) {
 
   return (
     <View style={vs.nativeVideoWrap}>
-      <VideoView player={player} style={vs.nativeVideo} nativeControls contentFit="contain" allowsFullscreen allowsPictureInPicture />
+      <VideoView player={player} style={vs.nativeVideo} nativeControls contentFit="contain" fullscreenOptions={{ enable: true }} allowsPictureInPicture />
     </View>
   );
 }
@@ -214,7 +196,7 @@ function EventViewer({ event, onClose }: { event: GalleryEvent; onClose: () => v
             </Pressable>
             <View style={s.titleContainer}>
               <Text style={s.headerTitle} numberOfLines={1}>{event.title}</Text>
-              <Text style={s.headerSubTitle}>{event.photoCount} fotos · {event.videoCount} videos</Text>
+              <Text style={s.headerSubTitle}>{albumCountLabel(event)}</Text>
             </View>
             <View style={s.iconBtn} />
           </View>
@@ -316,7 +298,7 @@ function EventCard({ event, onPress, index, accentColor }: { event: GalleryEvent
         </View>
         <View style={ec.body}>
           <Text style={ec.title} numberOfLines={2}>{event.title}</Text>
-          <Text style={ec.meta}>{event.photoCount} fotos · {event.videoCount} videos</Text>
+          <Text style={ec.meta}>{albumCountLabel(event)}</Text>
           <Text style={ec.desc} numberOfLines={2}>{event.description}</Text>
         </View>
       </Pressable>
@@ -327,17 +309,18 @@ function EventCard({ event, onPress, index, accentColor }: { event: GalleryEvent
 export default function Galeria() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { album } = useLocalSearchParams<{ album?: string }>();
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<GalleryEvent | null>(null);
   const [filter, setFilter] = useState(FILTER_ALL);
 
-  const events = groupByEvent(items);
+  const events = groupGalleryAlbums(items);
   const filters = [FILTER_ALL, "Con fotos", "Con videos"];
   const filteredEvents = events.filter((event) => filter === FILTER_ALL || (filter === "Con fotos" ? event.photoCount > 0 : event.videoCount > 0));
 
   const fetchGallery = async () => {
-    const { data, error } = await supabase.from("gallery_photos").select("*, tournaments(name), gallery_albums(title)").order("upload_date", { ascending: false });
+    const { data, error } = await supabase.from("gallery_photos").select(GALLERY_COLUMNS).order("upload_date", { ascending: false }).limit(2000);
     if (!error) setItems((data || []).map(mapGalleryItem).filter((item) => Boolean(item.mediaUrl)));
     setLoading(false);
   };
@@ -346,16 +329,27 @@ export default function Galeria() {
     fetchGallery();
   }, []);
 
+  useEffect(() => {
+    if (!album || items.length === 0) return;
+    const match = groupGalleryAlbums(items).find((event) => event.id === album);
+    if (match) setSelectedEvent(match);
+  }, [album, items]);
+
+  const closeEvent = () => {
+    setSelectedEvent(null);
+    if (album) router.setParams({ album: undefined });
+  };
+
   return (
     <View style={[s.container, { backgroundColor: colors.background }]}>
       <View style={[s.header, { backgroundColor: colors.primary, paddingTop: insets.top + (Platform.OS === "web" ? 67 : 16) }]}>
         <View style={s.headerRow}>
-          <Pressable onPress={() => router.back()} hitSlop={15} style={s.iconBtn}>
+          <Pressable onPress={() => goBack("/")} hitSlop={15} style={s.iconBtn}>
             <Feather name="arrow-left" size={24} color="#fff" />
           </Pressable>
           <View style={s.titleContainer}>
             <Text style={s.headerTitle}>Galeria Smiling</Text>
-            <Text style={s.headerSubTitle}>Eventos con fotos y videos</Text>
+            <Text style={s.headerSubTitle}>Elige un torneo o evento para ver sus fotos</Text>
           </View>
           <View style={s.iconBtn} />
         </View>
@@ -400,7 +394,7 @@ export default function Galeria() {
         />
       )}
 
-      {selectedEvent && <EventViewer event={selectedEvent} onClose={() => setSelectedEvent(null)} />}
+      {selectedEvent && <EventViewer event={selectedEvent} onClose={closeEvent} />}
     </View>
   );
 }
@@ -421,7 +415,7 @@ const vs = StyleSheet.create({
   embeddedVideoWrap: { width: "92%", height: "72%", alignItems: "center", justifyContent: "center" },
   nativeVideoWrap: { width: "100%", flex: 1, alignItems: "center", justifyContent: "center" },
   nativeVideo: { width: "100%", height: "100%" },
-  videoThumb: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%", opacity: 0.55 },
+  videoThumb: { ...StyleSheet.absoluteFill, width: "100%", height: "100%", opacity: 0.55 },
   videoOverlay: { alignItems: "center", gap: 14 },
   playButton: { width: 82, height: 82, borderRadius: 41, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.2)", borderWidth: 1, borderColor: "rgba(255,255,255,0.35)" },
   videoText: { color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold" },
@@ -456,7 +450,7 @@ const sc = StyleSheet.create({
 const ec = StyleSheet.create({
   card: { height: 260, borderRadius: CARD_RADIUS, overflow: "hidden", elevation: 6, shadowColor: "#000", shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 5 } },
   cover: { position: "absolute", width: "100%", height: "100%" },
-  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.32)" },
+  scrim: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.32)" },
   topRow: { position: "absolute", top: 16, left: 16, right: 16, flexDirection: "row", justifyContent: "space-between" },
   countPill: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
   countText: { color: "#fff", fontSize: 12, fontFamily: "Inter_700Bold" },
@@ -477,7 +471,7 @@ const s = StyleSheet.create({
   filterRow: { gap: 12, paddingBottom: 6, paddingHorizontal: 4 },
   filterChip: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 100 },
   filterChipText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  feed: { padding: 16, gap: 16, paddingBottom: 60 },
+  feed: { padding: 16, gap: 16, paddingBottom: 120 },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 40 },
   emptyIconWrap: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", marginBottom: 8 },
   emptyTitle: { fontSize: 20, fontFamily: "Inter_700Bold", textAlign: "center" },

@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { goBack } from "@/lib/navigation";
 import { supabase } from "@/lib/supabase";
 
 export default function BeneficiaryDetailScreen() {
@@ -147,7 +148,7 @@ export default function BeneficiaryDetailScreen() {
     return (
       <View style={[styles.notFound, { backgroundColor: colors.background }]}>
         <Text style={[styles.notFoundText, { color: colors.foreground }]}>Beneficiario no encontrado</Text>
-        <Pressable onPress={() => router.back()}>
+        <Pressable onPress={() => goBack("/(tabs)/expedientes")}>
           <Text style={{ color: colors.primary, marginTop: 10 }}>Regresar</Text>
         </Pressable>
       </View>
@@ -165,7 +166,7 @@ export default function BeneficiaryDetailScreen() {
           },
         ]}
       >
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => goBack("/(tabs)/expedientes")} style={styles.backBtn}>
           <Feather name="arrow-left" size={22} color="#FFFFFF" />
         </Pressable>
         <Text style={styles.headerTitle} numberOfLines={1}>Beneficiario</Text>

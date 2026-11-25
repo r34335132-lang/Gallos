@@ -8,7 +8,6 @@ import {
   Image,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -18,7 +17,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { goBack } from "@/lib/navigation";
 import { MUNICIPALITIES } from "@/lib/appData";
+import { uploadMedia } from "@/lib/mediaUpload";
 import { supabase } from "@/lib/supabase";
 
 const INTERNAL_ROLES = ["admin", "capturista", "validador", "comunicacion"];
@@ -28,6 +29,7 @@ export default function RegistrarBeneficiarioScreen() {
   const insets = useSafeAreaInsets();
   const { profile } = useAuth();
   const isInternal = INTERNAL_ROLES.includes(profile?.role || "");
+  const tabBarHeight = Platform.OS === "web" ? 84 : 60;
 
   const [loading, setLoading] = useState(false);
   const [beneficiaryName, setBeneficiaryName] = useState("");
@@ -50,24 +52,7 @@ export default function RegistrarBeneficiarioScreen() {
     }
   };
 
-  const uploadImageToStorage = async (fileUri: string): Promise<string | null> => {
-    const fileExt = fileUri.split(".").pop() || "jpeg";
-    const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-    const filePath = `beneficiaries/${fileName}`;
-
-    const formData = new FormData();
-    formData.append("file", {
-      uri: fileUri,
-      name: fileName,
-      type: `image/${fileExt === "jpg" ? "jpeg" : fileExt}`,
-    } as any);
-
-    const { error } = await supabase.storage.from("img").upload(filePath, formData);
-    if (error) throw error;
-
-    const { data } = supabase.storage.from("img").getPublicUrl(filePath);
-    return data.publicUrl;
-  };
+  const uploadImageToStorage = (fileUri: string) => uploadMedia({ uri: fileUri, type: "imagen" }, { folder: "beneficiaries" });
 
   const resolveTutor = async () => {
     if (!isInternal) {
@@ -147,14 +132,18 @@ export default function RegistrarBeneficiarioScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { backgroundColor: colors.primary, paddingTop: insets.top + (Platform.OS === "web" ? 60 : 16) }]}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => goBack("/(tabs)")} style={styles.backBtn}>
           <Feather name="arrow-left" size={24} color="#FFF" />
         </Pressable>
         <Text style={styles.headerTitle}>Registrar beneficiario</Text>
         <View style={{ width: 32 }} />
       </View>
 
-      <KeyboardAwareScrollViewCompat contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}>
+      <KeyboardAwareScrollViewCompat
+        style={{ flex: 1 }}
+        contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + insets.bottom + 32 }]}
+        bottomOffset={tabBarHeight}
+      >
         <View style={styles.section}>
           <Text style={[styles.title, { color: colors.foreground }]}>Datos básicos</Text>
           <Text style={[styles.helper, { color: colors.mutedForeground }]}>
@@ -200,8 +189,8 @@ export default function RegistrarBeneficiarioScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={[styles.inputLabel, { color: colors.foreground }]}>Municipio / Localidad</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+            <Text style={[styles.inputLabel, { color: colors.foreground }]}>Sede / Municipio</Text>
+            <View style={styles.chipWrap}>
               {MUNICIPALITIES.map((mun) => (
                 <Pressable
                   key={mun}
@@ -217,7 +206,7 @@ export default function RegistrarBeneficiarioScreen() {
                   <Text style={[styles.chipText, { color: municipality === mun ? "#FFFFFF" : colors.foreground }]}>{mun}</Text>
                 </Pressable>
               ))}
-            </ScrollView>
+            </View>
           </View>
 
           <View style={styles.inputGroup}>
@@ -268,12 +257,13 @@ const styles = StyleSheet.create({
   backBtn: { padding: 4 },
   headerTitle: { color: "#FFFFFF", fontSize: 18, fontFamily: "Inter_700Bold" },
   scroll: { padding: 20 },
-  section: { flex: 1, gap: 16 },
+  section: { gap: 16 },
   title: { fontSize: 22, fontFamily: "Inter_700Bold" },
   helper: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 21 },
   inputGroup: { gap: 8 },
   inputLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, height: 50, fontSize: 15, fontFamily: "Inter_400Regular" },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10 },
   chipText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   photoBox: { height: 160, borderWidth: 1, borderStyle: "dashed", borderRadius: 12, alignItems: "center", justifyContent: "center", overflow: "hidden" },

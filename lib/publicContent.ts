@@ -1,4 +1,5 @@
 import { formatDisplayDate, mapGalleryItem, mapNews, mapSponsor, type GalleryItem, type NewsArticle, type Sponsor } from "@/lib/appData";
+import { GALLERY_COLUMNS } from "@/lib/galleryAlbums";
 import { supabase } from "@/lib/supabase";
 
 export type PublicStatus = "borrador" | "publicada" | "archivada" | "activa" | "pausada" | "finalizada" | string;
@@ -23,6 +24,7 @@ export interface PublicEvent {
   description: string;
   location: string;
   eventDate: string;
+  startsAt: string | null;
   imageUrl?: string | null;
   videoUrl?: string | null;
   status: PublicStatus;
@@ -41,6 +43,7 @@ export interface SiteSettings {
   email: string;
   phone: string;
   serviceArea: string;
+  moniUrl: string;
 }
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
@@ -48,7 +51,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   impactCampaigns: 0,
   impactEvents: 0,
   aboutStory:
-    "Gallos Smiling acompana a beneficiarios y familias con actividades, comunicacion institucional y seguimiento basico de documentacion.",
+    "Gallos Smiling acompana a familias con actividades deportivas, convivencia y comunidad.",
   mission:
     "Impulsar oportunidades, comunidad y bienestar mediante programas institucionales, deportivos y de acompanamiento.",
   vision:
@@ -58,6 +61,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   email: "contacto@gallossmiling.org",
   phone: "+52 442 123 4567",
   serviceArea: "Queretaro y zona metropolitana",
+  moniUrl: process.env.EXPO_PUBLIC_MONI_URL || "https://moni-landing-fawn.vercel.app",
 };
 
 export const FALLBACK_CAMPAIGNS: Campaign[] = [
@@ -65,11 +69,11 @@ export const FALLBACK_CAMPAIGNS: Campaign[] = [
     id: "programa-institucional",
     title: "Programa institucional Gallos Smiling",
     slug: "programa-institucional",
-    description: "Acompanamiento, actividades y seguimiento basico para beneficiarios vinculados a la fundacion.",
-    content: "Un programa permanente para mantener comunicacion clara con tutores, beneficiarios y equipo interno.",
+    description: "Actividades deportivas, convivencia y acompanamiento para las familias de la fundacion.",
+    content: "Un programa permanente de actividades y comunidad de Gallos Smiling.",
     imageUrl: null,
     status: "activa",
-    goal: "Fortalecer la continuidad de cada beneficiario.",
+    goal: "Fortalecer la comunidad de la fundacion.",
     date: "Activa",
     isFeatured: true,
   },
@@ -95,6 +99,7 @@ export const FALLBACK_EVENTS: PublicEvent[] = [
     description: "Consulta proximamente las actividades publicas, campanas y encuentros de la fundacion.",
     location: "Queretaro",
     eventDate: "Proximamente",
+    startsAt: null,
     imageUrl: null,
     videoUrl: null,
     status: "activa",
@@ -125,6 +130,7 @@ function mapPublicEvent(row: any): PublicEvent {
     description: row.description ?? row.content ?? "",
     location: row.location ?? row.venue ?? "",
     eventDate: formatDisplayDate(row.event_date ?? row.date ?? row.created_at),
+    startsAt: row.event_date ?? row.date ?? null,
     imageUrl: row.image_url ?? row.storage_path ?? null,
     videoUrl: row.video_url ?? null,
     status: row.status ?? "publicada",
@@ -148,6 +154,7 @@ function mapSiteSettings(rows: any[] | null | undefined): SiteSettings {
     if (key === "email") settings.email = String(value || settings.email);
     if (key === "phone") settings.phone = String(value || settings.phone);
     if (key === "service_area") settings.serviceArea = String(value || settings.serviceArea);
+    if (key === "moni_url") settings.moniUrl = String(value || settings.moniUrl).trim();
   }
   return settings;
 }
@@ -155,7 +162,7 @@ function mapSiteSettings(rows: any[] | null | undefined): SiteSettings {
 export async function loadPublicBundle() {
   const [newsRes, galleryRes, sponsorsRes, campaignsRes, eventsRes, settingsRes] = await Promise.all([
     supabase.from("news").select("*").order("created_at", { ascending: false }).limit(6),
-    supabase.from("gallery_photos").select("*, tournaments(name)").order("upload_date", { ascending: false }).limit(8),
+    supabase.from("gallery_photos").select(GALLERY_COLUMNS).order("upload_date", { ascending: false }).limit(2000),
     supabase.from("sponsors").select("*").limit(8),
     supabase.from("campaigns").select("*").in("status", ["activa", "publicada"]).order("created_at", { ascending: false }).limit(6),
     supabase.from("events").select("*").order("event_date", { ascending: true }).limit(6),

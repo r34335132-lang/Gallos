@@ -2,6 +2,7 @@ import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { PublicScaffold } from "@/components/PublicScaffold";
 import { useColors } from "@/hooks/useColors";
+import { IS_PUBLIC_APP } from "@/lib/appVariant";
 
 export default function TermsScreen() {
   const colors = useColors();
@@ -9,7 +10,9 @@ export default function TermsScreen() {
     <PublicScaffold title="Terminos y condiciones" subtitle="Uso responsable de la plataforma Gallos Smiling.">
       <View style={[styles.box, { backgroundColor: colors.card }]}>
         <Text style={[styles.text, { color: colors.foreground }]}>
-          Esta plataforma se utiliza para comunicacion institucional, noticias, eventos, actividades, patrocinadores y acceso seguro por rol. El contenido publico es informativo. El acceso a paneles internos requiere autenticacion con Supabase y permisos asignados por la administracion.
+          {IS_PUBLIC_APP
+            ? "Esta aplicacion se utiliza para comunicacion institucional: noticias, eventos, actividades, galeria, campanas y patrocinadores. Todo el contenido es informativo y no requiere cuenta."
+            : "Esta plataforma se utiliza para comunicacion institucional, noticias, eventos, actividades, patrocinadores y acceso seguro por rol. El contenido publico es informativo. El acceso a paneles internos requiere autenticacion con Supabase y permisos asignados por la administracion."}
         </Text>
       </View>
     </PublicScaffold>

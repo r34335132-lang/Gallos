@@ -1,9 +1,10 @@
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
 import React from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { goBack } from "@/lib/navigation";
+import { IS_PUBLIC_APP } from "@/lib/appVariant";
 
 export default function PrivacidadScreen() {
   const colors = useColors();
@@ -20,7 +21,7 @@ export default function PrivacidadScreen() {
           },
         ]}
       >
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => goBack("/")} style={styles.backBtn}>
           <Feather name="arrow-left" size={22} color="#FFFFFF" />
         </Pressable>
         <Text style={styles.headerTitle}>Privacidad</Text>
@@ -34,7 +35,9 @@ export default function PrivacidadScreen() {
           </View>
           <Text style={[styles.title, { color: colors.foreground }]}>Privacidad</Text>
           <Text style={[styles.body, { color: colors.foreground }]}>
-            Gallos Smiling utiliza esta aplicación para comunicación institucional, noticias, eventos, actividades, patrocinadores y seguimiento básico de documentación. La aplicación no muestra diagnósticos médicos, historiales clínicos ni expedientes médicos a los tutores.
+            {IS_PUBLIC_APP
+              ? "Esta aplicación es informativa: muestra noticias, eventos, galería, campañas, patrocinadores y formas de apoyar a Gallos Smiling. No requiere crear una cuenta. Solo recopilamos los datos que escribes voluntariamente en el formulario de contacto (nombre, teléfono, correo y mensaje), y únicamente para responderte. Si aceptas las notificaciones, guardamos un identificador anónimo del dispositivo, sin vincularlo a ninguna persona, solo para avisarte de nuevas noticias y eventos."
+              : "Gallos Smiling utiliza esta aplicación para comunicación institucional, noticias, eventos, actividades, patrocinadores y seguimiento básico de documentación. La aplicación no muestra diagnósticos médicos, historiales clínicos ni expedientes médicos a los tutores."}
           </Text>
         </View>
       </ScrollView>

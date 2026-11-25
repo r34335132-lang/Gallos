@@ -99,8 +99,8 @@ const styles = StyleSheet.create({
   cardContainer: { borderRadius: 16, overflow: "hidden", marginBottom: 12, elevation: 4, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6 },
   gradient: { flex: 1, padding: 16, justifyContent: "center", alignItems: "center" },
   gradientRow: { flex: 1, padding: 16, flexDirection: "row", alignItems: "center", gap: 16 },
-  promoBg: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
-  promoScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.35)" },
+  promoBg: { ...StyleSheet.absoluteFill, width: "100%", height: "100%" },
+  promoScrim: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.35)" },
   
   // GOLD
   goldBadge: { position: "absolute", top: 12, right: 16, backgroundColor: "rgba(0,0,0,0.3)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, flexDirection: "row", alignItems: "center" },

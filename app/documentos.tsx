@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { goBack } from "@/lib/navigation";
 import { supabase, supabaseUrl } from "@/lib/supabase";
 
 const RESPONSIVE_LETTER_URL =
@@ -135,7 +136,7 @@ export default function DocumentosScreen() {
           },
         ]}
       >
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => goBack("/(tabs)")} style={styles.backBtn}>
           <Feather name="arrow-left" size={22} color="#FFFFFF" />
         </Pressable>
         <Text style={styles.headerTitle}>Documentos</Text>

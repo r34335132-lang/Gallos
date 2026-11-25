@@ -3,6 +3,7 @@ export type UserRole =
   | "capturista"
   | "validador"
   | "comunicacion"
+  | "entrenador"
   | "tutor"
   | "patrocinador"
   | "visitante";
@@ -12,10 +13,14 @@ export const ADMIN_ROLES: UserRole[] = [
   "capturista",
   "validador",
   "comunicacion",
+  "entrenador",
 ];
+
+export const ATTENDANCE_ROLES: UserRole[] = ["admin", "capturista", "validador", "entrenador"];
 
 export const STAFF_ROLES: { value: Exclude<UserRole, "tutor" | "patrocinador" | "visitante">; label: string }[] = [
   { value: "comunicacion", label: "Comunicación" },
+  { value: "entrenador", label: "Entrenador" },
   { value: "capturista", label: "Capturista" },
   { value: "validador", label: "Validador" },
   { value: "admin", label: "Administrador" },
@@ -187,7 +192,8 @@ export const EMPTY_STATS: Stats = {
 
 export const MUNICIPALITIES = [
   "Querétaro",
-  "El Marqués",
+  "Ezequiel Montes",
+  "Colón",
   "Corregidora",
   "San Juan del Río",
   "Tequisquiapan",
@@ -296,7 +302,7 @@ export function mapGalleryItem(row: any): GalleryItem {
     row.tournaments?.name ??
     row.tournament_name ??
     row.title ??
-    "GalerÃ­a";
+    "Galería";
   const looksLikeVideo =
     row.type === "video" ||
     row.media_type === "video" ||

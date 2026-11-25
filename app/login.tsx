@@ -49,7 +49,9 @@ export default function Login() {
         // Validar si el rol requiere panel de administración o flujos normales
         const rolesAdmin = ["admin", "capturista", "validador", "comunicacion"];
         
-        if (profile?.role && rolesAdmin.includes(profile.role)) {
+        if (profile?.role === "entrenador") {
+          router.replace("/asistencia" as any);
+        } else if (profile?.role && rolesAdmin.includes(profile.role)) {
           router.replace("/admin");
         } else {
           router.replace("/(tabs)");

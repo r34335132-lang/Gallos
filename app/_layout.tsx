@@ -13,6 +13,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import "@/lib/webAlert";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
 
@@ -51,6 +52,7 @@ function RootLayoutNav() {
       <Stack.Screen name="estadisticas" />
       <Stack.Screen name="notificaciones" />
       <Stack.Screen name="patrocinadores" />
+      <Stack.Screen name="asistencia" />
     </Stack>
   );
 }

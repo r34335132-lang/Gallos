@@ -22,6 +22,7 @@ const ROLE_LABELS: Record<string, string> = {
   capturista: "Capturista",
   validador: "Validador",
   comunicacion: "Comunicación",
+  entrenador: "Entrenador",
   tutor: "Tutor",
   patrocinador: "Patrocinador",
   visitante: "Visitante",
@@ -40,7 +41,7 @@ export default function PerfilScreen() {
 
   // VERIFICAR SI EL USUARIO TIENE PERMISOS ADMINISTRATIVOS
   const role = profile?.role || "";
-  const isInternal = ["admin", "capturista", "validador", "comunicacion"].includes(role);
+  const isInternal = ["admin", "capturista", "validador", "comunicacion", "entrenador"].includes(role);
   const [docState, setDocState] = useState({
     cartaResponsivaRecibida: false,
     certificadoMedicoRecibido: false,
@@ -82,6 +83,7 @@ export default function PerfilScreen() {
 
   const adminItems = [
     { icon: "settings" as const, label: "Panel administrador", route: "/admin" },
+    { icon: "check-square" as const, label: "Pasar asistencia", route: "/asistencia" },
     { icon: "user-plus" as const, label: "Registrar beneficiario", route: "/(tabs)/registrar" },
     { icon: "file-text" as const, label: "Noticias", route: "/(tabs)/noticias" }, // Aunque no esté en el tab, pueden acceder desde aquí
     { icon: "bar-chart-2" as const, label: "Estadísticas", route: "/estadisticas" },
@@ -92,10 +94,11 @@ export default function PerfilScreen() {
   
   // ASIGNAR EL MENÚ CORRECTO SEGÚN EL ROL
   const allowedRoutesByRole: Record<string, string[]> = {
-    admin: ["/admin", "/(tabs)/registrar", "/(tabs)/noticias", "/estadisticas", "/(tabs)/expedientes", "/patrocinadores", "/notificaciones"],
-    capturista: ["/admin", "/(tabs)/registrar", "/(tabs)/expedientes", "/notificaciones"],
-    validador: ["/admin", "/(tabs)/expedientes", "/notificaciones"],
+    admin: ["/admin", "/asistencia", "/(tabs)/registrar", "/(tabs)/noticias", "/estadisticas", "/(tabs)/expedientes", "/patrocinadores", "/notificaciones"],
+    capturista: ["/admin", "/asistencia", "/(tabs)/registrar", "/(tabs)/expedientes", "/notificaciones"],
+    validador: ["/admin", "/asistencia", "/(tabs)/expedientes", "/notificaciones"],
     comunicacion: ["/admin", "/(tabs)/noticias", "/notificaciones"],
+    entrenador: ["/asistencia", "/notificaciones"],
   };
   
   const menuItems = isInternal

@@ -1,5 +1,4 @@
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -13,6 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatsCard } from "@/components/StatsCard";
 import { useColors } from "@/hooks/useColors";
+import { goBack } from "@/lib/navigation";
 import {
   deriveStats,
   EMPTY_STATS,
@@ -157,7 +157,7 @@ export default function EstadisticasScreen() {
           },
         ]}
       >
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => goBack("/admin")} style={styles.backBtn}>
           <Feather name="arrow-left" size={22} color="#FFFFFF" />
         </Pressable>
         <Text style={styles.headerTitle}>Estadísticas</Text>

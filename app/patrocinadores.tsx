@@ -1,5 +1,4 @@
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -13,7 +12,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import SponsorCard from "@/components/SponsorCard";
 import { useColors } from "@/hooks/useColors";
+import { goBack } from "@/lib/navigation";
 import { mapSponsor, type Sponsor, type SponsorLevel } from "@/lib/appData";
+import { IS_PUBLIC_APP } from "@/lib/appVariant";
 import { supabase } from "@/lib/supabase";
 
 const LEVEL_FILTERS: { value: SponsorLevel | "todos"; label: string }[] = [
@@ -84,7 +85,7 @@ export default function PatrocinadoresScreen() {
           },
         ]}
       >
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => goBack("/")} style={styles.backBtn}>
           <Feather name="arrow-left" size={22} color="#FFFFFF" />
         </Pressable>
         <Text style={styles.headerTitle}>Patrocinadores</Text>
@@ -123,7 +124,7 @@ export default function PatrocinadoresScreen() {
               <View style={[styles.impactDivider, { backgroundColor: "rgba(255,255,255,0.2)" }]} />
               <View style={styles.impactStat}>
                 <Text style={styles.impactValue}>{totalBeneficiaries}</Text>
-                <Text style={styles.impactLabel}>Beneficiarios apoyados</Text>
+                <Text style={styles.impactLabel}>{IS_PUBLIC_APP ? "Personas apoyadas" : "Beneficiarios apoyados"}</Text>
               </View>
             </View>
 

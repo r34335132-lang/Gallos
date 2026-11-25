@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import React from "react";
 import {
   ActivityIndicator,
@@ -14,7 +14,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { goBack } from "@/lib/navigation";
 import { mapNews, type NewsArticle } from "@/lib/appData";
+import { shareContent } from "@/lib/nativeActions";
 import { supabase } from "@/lib/supabase";
 
 const IMAGES: Record<string, ImageSourcePropType> = {
@@ -90,7 +92,7 @@ export default function NewsDetailScreen() {
         <Text style={[styles.notFoundText, { color: colors.foreground }]}>
           Noticia no encontrada
         </Text>
-        <Pressable onPress={() => router.back()}>
+        <Pressable onPress={() => goBack("/")}>
           <Text style={{ color: colors.primaryLight }}>Regresar</Text>
         </Pressable>
       </View>
@@ -118,8 +120,26 @@ export default function NewsDetailScreen() {
               },
             ]}
           >
-            <Pressable onPress={() => router.back()} style={styles.backPressable}>
+            <Pressable onPress={() => goBack("/")} style={styles.backPressable}>
               <Feather name="arrow-left" size={22} color="#FFFFFF" />
+            </Pressable>
+          </View>
+          <View
+            style={[
+              styles.backBtn,
+              styles.shareBtn,
+              {
+                top: insets.top + (Platform.OS === "web" ? 67 : 16),
+                backgroundColor: "rgba(0,0,0,0.4)",
+              },
+            ]}
+          >
+            <Pressable
+              onPress={() => shareContent({ title: article.title, text: article.summary, path: `/noticia/${article.id}` })}
+              style={styles.backPressable}
+              accessibilityLabel="Compartir noticia"
+            >
+              <Feather name="share-2" size={20} color="#FFFFFF" />
             </Pressable>
           </View>
         </View>
@@ -176,6 +196,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+  },
+  shareBtn: {
+    left: undefined,
+    right: 16,
   },
   backPressable: {
     width: 40,

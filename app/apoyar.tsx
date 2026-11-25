@@ -14,14 +14,27 @@ const WAYS = [
 
 export default function SupportScreen() {
   const colors = useColors();
-  const [whatsapp, setWhatsapp] = useState(DEFAULT_SITE_SETTINGS.whatsappUrl);
+  const [settings, setSettings] = useState(DEFAULT_SITE_SETTINGS);
 
   useEffect(() => {
-    loadSettings().then((settings) => setWhatsapp(settings.whatsappUrl)).catch(() => {});
+    loadSettings().then(setSettings).catch(() => {});
   }, []);
 
   return (
     <PublicScaffold title="Apoyar" subtitle="Formas de colaborar con Gallos Smiling sin pagos obligatorios dentro de la plataforma.">
+      {!!settings.moniUrl && (
+        <View style={[styles.moni, { borderColor: colors.primary + "40", backgroundColor: colors.primary + "0D" }]}>
+          <View style={[styles.icon, { backgroundColor: colors.primary }]}><Feather name="smartphone" size={24} color="#fff" /></View>
+          <View style={styles.moniText}>
+            <Text style={[styles.title, { color: colors.foreground }]}>Descarga Moni</Text>
+            <Text style={[styles.text, { color: colors.mutedForeground }]}>Descarga la app Moni y apoya a Gallos Smiling desde tu celular.</Text>
+          </View>
+          <Pressable style={[styles.moniBtn, { backgroundColor: colors.primary }]} onPress={() => Linking.openURL(settings.moniUrl)}>
+            <Feather name="download" size={16} color="#fff" />
+            <Text style={styles.moniBtnText}>Descargar</Text>
+          </Pressable>
+        </View>
+      )}
       <View style={styles.grid}>
         {WAYS.map((item) => (
           <View key={item.title} style={[styles.card, { borderColor: colors.border, backgroundColor: colors.background }]}>
@@ -34,7 +47,7 @@ export default function SupportScreen() {
       <View style={[styles.cta, { backgroundColor: colors.primary }]}>
         <Text style={styles.ctaTitle}>Hablemos de como puedes apoyar</Text>
         <Text style={styles.ctaText}>La plataforma queda preparada para futuras integraciones de donacion, pero hoy el contacto se realiza directamente con la asociacion.</Text>
-        <Pressable style={styles.btn} onPress={() => Linking.openURL(whatsapp)}>
+        <Pressable style={styles.btn} onPress={() => Linking.openURL(settings.whatsappUrl)}>
           <Text style={[styles.btnText, { color: colors.primary }]}>Contactar por WhatsApp</Text>
         </Pressable>
       </View>
@@ -43,6 +56,10 @@ export default function SupportScreen() {
 }
 
 const styles = StyleSheet.create({
+  moni: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 14, borderWidth: 1, borderRadius: 18, padding: 18 },
+  moniText: { flexGrow: 1, flexBasis: 200, gap: 4 },
+  moniBtn: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 999, paddingHorizontal: 18, paddingVertical: 12 },
+  moniBtnText: { color: "#fff", fontFamily: "Inter_700Bold" },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 14 },
   card: { flexGrow: 1, flexBasis: 240, borderWidth: 1, borderRadius: 18, padding: 18, gap: 9 },
   icon: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },

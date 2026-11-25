@@ -51,6 +51,11 @@ export default function ExpedientesScreen() {
   };
 
   useEffect(() => {
+    if (!profile) {
+      setBeneficiaries([]);
+      setLoading(false);
+      return;
+    }
     fetchBeneficiaries();
   }, [profile?.id, profile?.role]);
 

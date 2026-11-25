@@ -4,14 +4,23 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "base": {
+      "env": {
+        "APP_VARIANT": "public"
+      }
+    },
     "development": {
+      "extends": "base",
       "developmentClient": true,
       "distribution": "internal"
     },
     "preview": {
+      "extends": "base",
       "distribution": "internal"
     },
     "production": {
+      "extends": "base",
+      "environment": "production",
       "autoIncrement": true
     }
   },

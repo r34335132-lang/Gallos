@@ -2,18 +2,13 @@
   "expo": {
     "name": "Gallos Smiling",
     "slug": "GallosSmiling",
-    "version": "1.0.2",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
     "scheme": "mobile",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/logo.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0D2B6E"
-    },
     "ios": {
+      "icon": "./assets/images/app-icon.png",
       "supportsTablet": false,
       "bundleIdentifier": "com.raulbri123.GallosSmiling",
       "infoPlist": {
@@ -53,6 +48,14 @@
         }
       ],
       "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/logo.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0D2B6E"
+        }
+      ],
       "expo-web-browser",
       [
         "expo-notifications",
@@ -61,7 +64,15 @@
           "color": "#0D2B6E"
         }
       ],
-      "expo-video"
+      "expo-video",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Gallos Smiling usa tu calendario para agregar los eventos de la fundación que elijas.",
+          "writeOnlyCalendarPermission": "Gallos Smiling usa tu calendario para agregar los eventos de la fundación que elijas.",
+          "writeOnlyAccess": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
